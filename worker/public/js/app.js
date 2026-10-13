@@ -18,9 +18,8 @@ const ui = {
   r0: $("st-r0"), total: $("st-total"), claimed: $("st-claimed"),
   seasonBar: $("season-bar"),
   feed: $("feed"), card: $("card"), curve: $("curve"),
-  mode: $("mode"), rotate: $("btn-rotate"), about: $("about"),
-  keeper: $("keeper"), keeperBtn: $("btn-keeper"),
-  aboutBtn: $("btn-about"), loading: $("loading"),
+  mode: $("mode"), rotate: $("btn-rotate"), hero: $("hero"),
+  loading: $("loading"),
 };
 
 const POLL_MS = 4000;
@@ -42,9 +41,46 @@ const scheduleCardHide = (ms) => {
 scene.onHover((id) => { if (id == null) scheduleCardHide(500); else { cancelCardHide(); showCard(id); } });
 ui.card.addEventListener("mouseenter", cancelCardHide);
 ui.card.addEventListener("mouseleave", () => scheduleCardHide(350));
-scene.onSelect((id) => { if (id != null) scene.focus(id, colonyView); });
+// Clicking empty water dismisses the report card instantly — no grace timer:
+// a click is a deliberate "I'm done looking at this specimen".
+scene.onSelect((id) => {
+  if (id != null) { cancelCardHide(); scene.focus(id, colonyView); }
+  else { cancelCardHide(); ui.card.classList.add("hidden"); scene.focus(null, colonyView); }
+});
 
-const claim = setupClaim({ scene, getWorld: () => world, refresh: () => poll() });
+// ---------------------------------------------------------------------------
+// Drawer: one surface at a time, slid out from the left rail. Accordion
+// semantics — a new tab replaces the old one, ESC or ✕ gives the screen back
+// to the colony. This is where future panels plug in: add a rail button and
+// a <section data-p="..."> in index.html, nothing else.
+// ---------------------------------------------------------------------------
+
+const DRAWER_LABELS = { world: "WORLD", feed: "CHRONICLE", curve: "LEARNING CURVE", guardian: "GUARDIAN", chain: "KEEPER LEDGER", paper: "THE PAPER" };
+const drawer = {
+  el: $("drawer"), title: $("drawer-title"),
+  buttons: [...document.querySelectorAll(".rail-btn[data-drawer]")],
+  sections: [...document.querySelectorAll(".dp[data-p]")],
+  current: null,
+  show(key) {
+    if (this.current === key) { this.close(); return; }
+    this.current = key;
+    this.el.classList.remove("hidden");
+    this.title.textContent = DRAWER_LABELS[key] ?? key;
+    for (const s of this.sections) s.classList.toggle("hidden", s.dataset.p !== key);
+    for (const b of this.buttons) b.classList.toggle("active", b.dataset.drawer === key);
+  },
+  close() {
+    this.current = null;
+    this.el.classList.add("hidden");
+    for (const b of this.buttons) b.classList.remove("active");
+  },
+};
+for (const b of drawer.buttons) b.addEventListener("click", () => drawer.show(b.dataset.drawer));
+$("drawer-close").addEventListener("click", () => drawer.close());
+addEventListener("keydown", (e) => { if (e.key === "Escape") drawer.close(); });
+drawer.show("feed");   // the living chronicle is the default surface
+
+const claim = setupClaim({ scene, getWorld: () => world, refresh: () => poll(), openDrawer: (k) => drawer.show(k) });
 
 // ---------------------------------------------------------------------------
 // Shared-world polling
@@ -232,15 +268,18 @@ function renderCurve(w) {
 // the world, and everyone watches the same one turn).
 // ---------------------------------------------------------------------------
 
+// Orbit toggle: turning it off also pauses the auto-framing dolly, otherwise
+// #autoFit keeps moving the camera and the switch feels dead. Speed is high
+// enough that once it IS on, the drift is unmistakable.
 ui.rotate.addEventListener("click", () => {
-  scene.controls.autoRotate = !scene.controls.autoRotate;
-  ui.rotate.classList.toggle("off", !scene.controls.autoRotate);
+  const on = !scene.controls.autoRotate;
+  scene.setAutoRotate(on);
+  ui.rotate.classList.toggle("off", !on);
 });
-ui.aboutBtn.addEventListener("click", () => ui.about.classList.toggle("hidden"));
-ui.keeperBtn.addEventListener("click", () => ui.keeper.classList.toggle("hidden"));
 setupKeeper();
-if (location.hash === "#keeper") ui.keeper.classList.remove("hidden");
-if (location.hash === "#about") ui.about.classList.remove("hidden");
+// Legacy deep links land on the matching drawer tab.
+if (location.hash === "#keeper") drawer.show("chain");
+if (location.hash === "#about") drawer.show("paper");
 
 // ---------------------------------------------------------------------------
 // Boot: the shared world begins the instant the page opens.

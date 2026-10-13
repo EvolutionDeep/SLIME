@@ -5,7 +5,6 @@
 const $ = (id) => document.getElementById(id);
 
 const ui = {
-  panel: $("keeper"),
   body: $("keeper-body"),
   input: $("wallet-input"),
   lookup: $("btn-lookup"),

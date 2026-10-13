@@ -24,6 +24,8 @@
   --line-hot: rgba(130, 195, 255, 0.48);
   --display: "Unbounded", system-ui, sans-serif;
   --mono: "JetBrains Mono", ui-monospace, "Cascadia Mono", monospace;
+  --rail-w: 84px;                 /* left tool rail */
+  --drawer-w: 392px;              /* the single open surface */
 }
 
 * { box-sizing: border-box; margin: 0; padding: 0; }
@@ -87,27 +89,20 @@ body {
 }
 
 /* Diagonal corner brackets — the signature detail of every panel. */
-.hud:not(.top-left)::before, .hud:not(.top-left)::after,
-.telemetry::before, .telemetry::after {
+.hud::before, .hud::after {
   content: ""; position: absolute; width: 14px; height: 14px;
   pointer-events: none;
 }
-.hud:not(.top-left)::before {
+.hud::before {
   top: -1px; left: -1px;
   border-top: 1px solid var(--neon); border-left: 1px solid var(--neon);
   box-shadow: -2px -2px 10px rgba(111, 215, 255, 0.25);
 }
-.hud:not(.top-left)::after {
+.hud::after {
   bottom: -1px; right: -1px;
   border-bottom: 1px solid var(--neon); border-right: 1px solid var(--neon);
   box-shadow: 2px 2px 10px rgba(111, 215, 255, 0.25);
 }
-
-.top-left { top: 34px; left: 34px; background: none; border: none; backdrop-filter: none; box-shadow: none; }
-.top-right { top: 34px; right: 34px; padding: 0 0 0; min-width: 430px; }
-.bottom-left { left: 34px; bottom: 34px; background: none; border: none; backdrop-filter: none; box-shadow: none; }
-.bottom-right { right: 34px; bottom: 34px; width: 400px; padding-bottom: 8px; }
-.bottom-left .controls, .curve-wrap { backdrop-filter: blur(14px) saturate(1.3); }
 
 /* Shared micro-header strip used inside panels. */
 .panel-head {
@@ -132,19 +127,12 @@ body {
    Brand block (top-left, no panel chrome)
    -------------------------------------------------------------------------- */
 
-.plate {
-  display: flex; align-items: center; gap: 8px;
-  font-size: 9px; letter-spacing: 3px; text-transform: uppercase;
-  color: var(--dim); margin-bottom: 10px;
-}
-.plate-no {
-  color: var(--neon);
-  border: 1px solid var(--line-hot);
-  padding: 3px 8px 2px;
-  box-shadow: 0 0 14px rgba(111, 215, 255, 0.14);
+.brand {
+  position: fixed; z-index: 6; top: 30px; left: 34px;
+  pointer-events: none;   /* the colony behind it stays clickable */
 }
 
-.top-left h1 {
+.brand h1 {
   font-family: var(--display);
   font-weight: 800;
   font-size: 44px;
@@ -156,7 +144,7 @@ body {
   width: fit-content;
 }
 /* Slow luminous sweep across the wordmark. */
-.top-left h1::after {
+.brand h1::after {
   content: ""; position: absolute; inset: 0;
   background: linear-gradient(105deg, transparent 30%, rgba(180, 255, 235, 0.5) 48%, transparent 62%);
   background-size: 260% 100%;
@@ -186,11 +174,11 @@ body {
 }
 
 /* --------------------------------------------------------------------------
-   Telemetry gauges (top-right)
+   Telemetry gauges (world tab)
    -------------------------------------------------------------------------- */
 
 .gauges {
-  display: grid; grid-template-columns: repeat(5, 1fr);
+  display: grid; grid-template-columns: repeat(3, 1fr);
   gap: 1px; background: var(--line);
   margin: 0;
 }
@@ -211,7 +199,7 @@ body {
   font-variant-numeric: tabular-nums;
   transition: color 0.3s;
 }
-.stat.r0 { grid-column: span 5; flex-direction: row; align-items: center; gap: 14px; padding: 12px 13px; }
+.stat.r0 { grid-column: span 3; flex-direction: row; align-items: center; gap: 14px; padding: 12px 13px; }
 .stat.r0 value { min-width: 74px; font-size: 24px; color: var(--neon); }
 .stat.r0.hot value { color: var(--alarm); text-shadow: 0 0 22px rgba(255, 34, 68, 0.6); }
 
@@ -238,54 +226,143 @@ body {
 }
 
 /* --------------------------------------------------------------------------
-   Controls (bottom-left)
+   Tool rail (left edge): stacked icon buttons, one drawer open at a time
    -------------------------------------------------------------------------- */
 
-.controls { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 14px; }
-
-.controls button {
-  font-family: var(--mono); font-size: 10px; font-weight: 600;
-  letter-spacing: 2.2px; text-transform: uppercase;
-  color: var(--ink);
-  background: linear-gradient(165deg, rgba(10, 26, 26, 0.8), rgba(3, 10, 12, 0.7));
-  border: 1px solid var(--line);
-  padding: 10px 15px 9px;
-  cursor: pointer;
-  position: relative;
-  backdrop-filter: blur(10px);
-  transition: color 0.2s, border-color 0.2s, box-shadow 0.2s, transform 0.12s;
-}
-.controls button::before {
-  content: ""; position: absolute; left: 0; top: 0; bottom: 0; width: 2px;
-  background: var(--neon); opacity: 0; transition: opacity 0.2s;
-}
-.controls button:hover {
-  color: var(--neon);
-  border-color: var(--line-hot);
-  text-shadow: 0 0 12px rgba(111, 215, 255, 0.8);
-  box-shadow: 0 0 24px rgba(111, 215, 255, 0.12), inset 0 0 18px rgba(111, 215, 255, 0.05);
-  transform: translateY(-1px);
-}
-.controls button:hover::before { opacity: 1; }
-.controls button:active { transform: translateY(0); }
-.controls button.off { color: var(--dim); border-color: rgba(122, 138, 178, 0.3); }
-
-/* Learning-curve mini chart. */
-.curve-wrap {
-  width: 330px;
+.rail {
+  position: fixed; z-index: 8; left: 18px; top: 50%; transform: translateY(-50%);
+  display: flex; flex-direction: column; gap: 6px;
+  padding: 10px 8px;
   background: linear-gradient(160deg, rgba(10, 26, 26, 0.72), rgba(3, 10, 12, 0.6));
   border: 1px solid var(--line);
-  box-shadow: 0 18px 60px rgba(0, 0, 0, 0.55);
+  backdrop-filter: blur(14px) saturate(1.3);
+  box-shadow: 0 18px 60px rgba(2, 6, 24, 0.55), inset 0 1px 0 rgba(170, 215, 255, 0.06);
 }
-.curve-wrap canvas { display: block; width: 100%; }
+.rail-btn {
+  display: flex; flex-direction: column; align-items: center; gap: 3px;
+  width: 64px; padding: 9px 4px 7px; cursor: pointer; position: relative;
+  background: none; border: 1px solid transparent;
+  font-family: var(--mono); text-transform: uppercase;
+  color: var(--dim); transition: color 0.18s, border-color 0.18s, background 0.18s;
+}
+.rail-btn i { font-style: normal; font-size: 16px; line-height: 1; }
+.rail-btn span { font-size: 7.5px; font-weight: 600; letter-spacing: 1.8px; }
+.rail-btn:hover { color: var(--ink); background: rgba(111, 215, 255, 0.05); border-color: var(--line); }
+.rail-btn.active {
+  color: var(--neon); border-color: var(--line-hot);
+  background: rgba(111, 215, 255, 0.07);
+  box-shadow: inset 0 0 18px rgba(111, 215, 255, 0.06), 0 0 18px rgba(111, 215, 255, 0.12);
+}
+.rail-btn.off { color: var(--faint); }
+.rail-btn.off i { opacity: 0.45; }
+.rail-badge {
+  position: absolute; top: 4px; right: 6px;
+  min-width: 15px; height: 15px; padding: 0 3px; border-radius: 8px;
+  display: flex; align-items: center; justify-content: center;
+  font-family: var(--mono); font-style: normal; font-size: 8.5px; font-weight: 800;
+  color: #161004; background: var(--gold);
+  box-shadow: 0 0 12px var(--gold-hot);
+}
+.rail-badge.hidden { display: none; }
+.rail-sep { height: 1px; margin: 4px 6px; background: var(--line); }
 
 /* --------------------------------------------------------------------------
-   Chronicle feed (bottom-right) — a lab terminal log
+   Drawer: the single information surface, slides out beside the rail.
+   One panel at a time — accordion semantics, ESC gives the screen back.
+   -------------------------------------------------------------------------- */
+
+.drawer {
+  position: fixed; z-index: 7;
+  /* Bounded by the two loud elements: brand above, hero CTA below —
+     the drawer never overlaps either, at any viewport size. */
+  left: calc(18px + var(--rail-w) + 22px); top: 158px; bottom: 128px;
+  width: var(--drawer-w);
+  display: flex; flex-direction: column;
+  background: linear-gradient(160deg, rgba(9, 15, 38, 0.92), rgba(3, 9, 20, 0.88));
+  border: 1px solid var(--line);
+  backdrop-filter: blur(14px) saturate(1.3);
+  -webkit-backdrop-filter: blur(14px) saturate(1.3);
+  box-shadow: 0 18px 60px rgba(2, 6, 24, 0.55), inset 0 1px 0 rgba(170, 215, 255, 0.06);
+  animation: drawerIn 0.28s cubic-bezier(0.22, 1, 0.36, 1);
+}
+.drawer.hidden { display: none; }
+@keyframes drawerIn { from { opacity: 0; transform: translateX(-14px); } }
+
+.drawer-head {
+  display: flex; justify-content: space-between; align-items: center;
+  padding: 12px 16px 10px;
+  font-size: 10px; font-weight: 600; letter-spacing: 3px; text-transform: uppercase;
+  color: var(--ink);
+  border-bottom: 1px solid var(--line);
+}
+.drawer-head button {
+  cursor: pointer; background: none; border: 1px solid transparent;
+  color: var(--faint); font-family: var(--mono); font-size: 12px;
+  width: 24px; height: 24px; transition: color 0.15s, border-color 0.15s;
+}
+.drawer-head button:hover { color: var(--ink); border-color: var(--line-hot); }
+
+.drawer-body { flex: 1; min-height: 0; overflow-y: auto; overscroll-behavior: contain; display: flex; flex-direction: column; }
+
+/* One drawer, many surfaces: each .dp is a plug-in panel (see app.js). */
+.dp { padding: 14px 16px 18px; flex: 1; min-height: 0; }
+.dp.hidden { display: none; }
+/* Chronicle tab owns its scroll: head row fixed, log flexes inside. */
+.dp[data-p="feed"] { display: flex; flex-direction: column; padding-bottom: 10px; }
+.dp[data-p="feed"].hidden { display: none; }
+.dp[data-p="feed"] #feed { flex: 1; min-height: 0; }
+.dp p { font-size: 11.5px; line-height: 1.75; color: var(--ink); padding: 12px 0 0; }
+.dp i { color: var(--cyan); font-style: normal; }
+.dp ul:not(#feed) { list-style: none; padding: 10px 0 0; display: grid; gap: 9px; }
+.dp ul:not(#feed) li {
+  font-size: 11px; line-height: 1.65; color: var(--dim);
+  padding: 8px 12px;
+  border-left: 2px solid var(--line-hot);
+  background: linear-gradient(90deg, rgba(111, 215, 255, 0.04), transparent 70%);
+}
+.dp ul:not(#feed) li b { color: var(--neon); font-weight: 600; letter-spacing: 0.4px; }
+.dp .muted { font-style: italic; color: var(--faint); }
+.dp-note {
+  font-size: 10px !important; line-height: 1.7 !important; letter-spacing: 0.4px;
+  color: var(--faint) !important; border-top: 1px solid var(--line); margin-top: 14px;
+}
+
+/* Season countdown row inside the world tab. */
+.season-line {
+  display: flex; align-items: center; gap: 10px; margin-bottom: 12px;
+  font-size: 9px; letter-spacing: 1.6px; text-transform: uppercase; color: var(--dim);
+}
+.season-track { flex: 1; height: 3px; background: rgba(111, 215, 255, 0.12); overflow: hidden; display: block; }
+#season-bar { display: block; height: 100%; width: 0%; background: linear-gradient(90deg, var(--cyan), var(--gold)); transition: width 0.9s linear; }
+#season-cd { font-size: 10px; font-weight: 600; letter-spacing: 1px; color: var(--gold); font-variant-numeric: tabular-nums; }
+
+/* Chronicle tab: live badge above the scrolling log. */
+.feed-live {
+  display: flex; align-items: center; gap: 10px; padding: 0 2px 8px;
+  font-size: 8.5px; letter-spacing: 2px; text-transform: uppercase; color: var(--faint);
+  border-bottom: 1px solid var(--line);
+}
+
+/* Learning-curve chart inside the curve tab. */
+.dp canvas { display: block; width: 100%; margin-top: 10px; }
+
+/* --------------------------------------------------------------------------
+   Hero invitation (wallet-less visitors): bottom-center, the one loud thing
+   -------------------------------------------------------------------------- */
+
+.hero-wrap {
+  position: fixed; z-index: 8; left: 50%; bottom: 26px; transform: translateX(-50%);
+  width: min(560px, calc(100vw - 2 * var(--rail-w) - 60px));
+}
+.hero-wrap.hidden { display: none; }
+
+/* --------------------------------------------------------------------------
+   Chronicle feed (inside the drawer) — a lab terminal log
    -------------------------------------------------------------------------- */
 
 #feed {
   list-style: none;
-  max-height: 300px; overflow-y: auto;
+  max-height: 100%; overflow-y: auto;
   padding: 8px 4px 8px 0;
   font-size: 11px;
   scrollbar-gutter: stable;
@@ -329,7 +406,7 @@ body {
    -------------------------------------------------------------------------- */
 
 .report {
-  left: 34px; top: 50%; transform: translateY(-50%);
+  right: 28px; top: 50%; transform: translateY(-50%);
   width: 264px; padding: 0 0 10px;
   animation: cardIn 0.28s cubic-bezier(0.22, 1, 0.36, 1);
 }
@@ -368,22 +445,14 @@ body {
 .report.hidden { display: none; }
 
 /* --------------------------------------------------------------------------
-   Keeper cockpit
+   Keeper cockpit (chain tab of the drawer)
    -------------------------------------------------------------------------- */
 
-.keeper-panel {
-  right: 34px; top: 50%; transform: translateY(-50%);
-  width: 420px; max-height: 82vh; overflow-y: auto;
-  padding-bottom: 16px;
-  animation: slideIn 0.3s cubic-bezier(0.22, 1, 0.36, 1);
-}
-@keyframes slideIn { from { opacity: 0; transform: translateY(-50%) translateX(16px); } }
-.keeper-panel.hidden { display: none; }
+.keeper-intro { padding: 2px 0 0; }
+.keeper-intro .muted { color: var(--dim); font-size: 11px; line-height: 1.65; padding: 0 0 4px; font-style: normal; }
+.muted.empty { padding: 14px 4px; font-style: italic; color: var(--faint); }
 
-.keeper-panel .muted { color: var(--dim); font-size: 11px; line-height: 1.65; padding: 12px 16px 0; }
-.muted.empty { padding: 14px 16px; font-style: italic; color: var(--faint); }
-
-.keeper-connect { display: flex; gap: 8px; padding: 12px 16px 4px; }
+.keeper-connect { display: flex; gap: 8px; padding: 10px 0 4px; }
 .keeper-connect input {
   flex: 1; background: rgba(2, 8, 9, 0.8);
   border: 1px solid var(--line); color: var(--ink);
@@ -407,7 +476,7 @@ body {
 .keeper-connect button:hover { filter: brightness(1.15); box-shadow: 0 0 30px rgba(111, 215, 255, 0.5); }
 .keeper-connect button:active { transform: translateY(1px); }
 
-.keeper-body { padding: 8px 16px 0; }
+.keeper-body { padding: 8px 0 0; }
 .keeper-body h3 {
   font-size: 9.5px; font-weight: 600; letter-spacing: 2.8px; text-transform: uppercase;
   color: var(--dim); margin: 18px 0 9px;
@@ -489,31 +558,6 @@ body {
 .k-bet.pending .k-out { color: var(--amber); animation: blink 1.8s steps(2) infinite; }
 
 /* --------------------------------------------------------------------------
-   Paper panel
-   -------------------------------------------------------------------------- */
-
-.paper-panel {
-  left: 50%; top: 50%; transform: translate(-50%, -50%);
-  width: min(600px, calc(100vw - 80px));
-  max-height: 80vh; overflow-y: auto;
-  padding: 0 0 22px;
-  animation: fadeIn 0.3s cubic-bezier(0.22, 1, 0.36, 1);
-}
-@keyframes fadeIn { from { opacity: 0; } }
-.paper-panel.hidden { display: none; }
-.paper-panel p { font-size: 12px; line-height: 1.75; color: var(--ink); padding: 14px 22px 0; }
-.paper-panel i { color: var(--cyan); }
-.paper-panel ul { list-style: none; padding: 10px 22px 0; display: grid; gap: 9px; }
-.paper-panel li {
-  font-size: 11.5px; line-height: 1.65; color: var(--dim);
-  padding: 8px 12px;
-  border-left: 2px solid var(--line-hot);
-  background: linear-gradient(90deg, rgba(111, 215, 255, 0.04), transparent 70%);
-}
-.paper-panel li b { color: var(--neon); font-weight: 600; letter-spacing: 0.4px; }
-.paper-panel .muted { font-style: italic; color: var(--faint); }
-
-/* --------------------------------------------------------------------------
    Loading
    -------------------------------------------------------------------------- */
 
@@ -532,24 +576,21 @@ body {
 @keyframes spin { to { transform: rotate(360deg); } }
 
 /* --------------------------------------------------------------------------
-   Responsive trims
+   Responsive trims: the layout is one rail + one drawer, so narrow screens
+   simply shrink the drawer and tuck the report card closer to the edge.
    -------------------------------------------------------------------------- */
 
-@media (max-width: 1100px) {
-  .bottom-right { width: 320px; }
-  #feed { max-height: 210px; }
-  .keeper-panel { width: min(420px, calc(100vw - 68px)); }
-  .rpg-dock { width: min(560px, calc(100vw - 48px)); }
+@media (max-width: 1280px) {
+  :root { --drawer-w: 340px; }
+  .report { right: 20px; width: 244px; }
 }
-@media (max-width: 860px) {
-  .top-right { display: none; }
-  .top-left { top: 22px; left: 22px; }
-  .top-left h1 { font-size: 30px; letter-spacing: 7px; }
-  .bottom-left { left: 22px; bottom: 22px; }
-  .curve-wrap { display: none; }
-  .bottom-right { display: none; }
-  .report { display: none; }
-  .rpg-dock { width: calc(100vw - 32px); bottom: 14px; }
+@media (max-width: 900px) {
+  .brand { top: 20px; left: 22px; }
+  .brand h1 { font-size: 30px; letter-spacing: 7px; }
+  :root { --drawer-w: min(360px, calc(100vw - var(--rail-w) - 48px)); }
+  .drawer { top: 128px; bottom: 118px; }
+  .report { display: none; }          /* touch/small windows: tap-to-focus only */
+  .hero-wrap { width: calc(100vw - var(--rail-w) - 48px); }
   .markers .slime-marker:nth-child(n+6) { display: none; }
 }
 
@@ -561,31 +602,17 @@ body {
 
 :root { --gold: #ffcf6b; --gold-hot: rgba(255, 207, 107, 0.55); }
 
-/* Season countdown: the shared clock, made visible. */
-.season { display: inline-flex; align-items: center; gap: 8px; }
-.season-track {
-  display: inline-block; width: 72px; height: 3px;
-  background: rgba(111, 215, 255, 0.12); overflow: hidden;
-}
-.season-track #season-bar, #season-bar {
-  display: block; height: 100%; width: 0%;
-  background: linear-gradient(90deg, var(--cyan), var(--gold));
-  transition: width 0.9s linear;
-}
-#season-cd {
-  font-size: 9px; font-weight: 600; letter-spacing: 1px;
-  color: var(--gold); font-variant-numeric: tabular-nums;
+/* The dock now lives INSIDE the guardian tab: static, full-width, no fixed
+   chrome — the drawer provides the frame. */
+.rpg-dock {
+  width: 100%;
+  background: rgba(111, 215, 255, 0.03);
+  border: 1px solid var(--line); border-top: 1px solid var(--line-hot);
+  clip-path: polygon(12px 0, calc(100% - 12px) 0, 100% 12px, 100% 100%, 0 100%, 0 12px);
 }
 
-/* The dock: bottom-center, always on screen, always asking to be played. */
-.rpg-dock {
-  position: fixed; z-index: 7; left: 50%; bottom: 22px; transform: translateX(-50%);
-  width: min(680px, calc(100vw - 64px));
-  background: var(--panel); backdrop-filter: blur(14px);
-  border: 1px solid var(--line); border-top: 1px solid var(--line-hot);
-  clip-path: polygon(14px 0, calc(100% - 14px) 0, 100% 14px, 100% 100%, 0 100%, 0 14px);
-  box-shadow: 0 12px 44px rgba(0, 4, 8, 0.65);
-}
+/* Wallet-less state: the dock waits politely while the hero shouts. */
+.dock-connect { padding: 18px 16px; font-size: 10.5px; line-height: 1.8; color: var(--dim); letter-spacing: 0.6px; }
 
 .dock-cta {
   display: flex; flex-direction: column; align-items: center; gap: 10px;
@@ -633,7 +660,8 @@ body {
   white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 46%;
 }
 
-.dock-cards { display: flex; gap: 10px; padding: 12px 16px 14px; overflow-x: auto; }
+.dock-cards { display: flex; flex-wrap: wrap; gap: 10px; padding: 12px 14px 14px; }
+.dock-cards .cr-card { flex: 1 1 calc(50% - 5px); min-width: 172px; }
 .dock-empty {
   font-size: 10px; letter-spacing: 0.8px; color: var(--dim); line-height: 1.7;
   display: flex; align-items: center;
@@ -735,9 +763,9 @@ body {
 }
 .modal-actions button:not(.primary):hover { color: var(--ink); border-color: var(--line-hot); }
 
-/* Toast: the world talking back. */
+/* Toast: the world talking back. Sits above everything, bottom-center. */
 #toast {
-  position: fixed; z-index: 60; left: 50%; bottom: calc(22px + var(--dock-h, 130px));
+  position: fixed; z-index: 60; left: 50%; bottom: 26px;
   transform: translate(-50%, 14px);
   padding: 10px 20px; pointer-events: none; opacity: 0;
   background: rgba(13, 19, 46, 0.94); border: 1px solid var(--gold-hot);

@@ -17,6 +17,7 @@ const isAddr = (s) => /^[1-9A-HJ-NP-Za-km-z]{32,44}$/.test(s);
 
 export function setupClaim(hooks) {
   const dock = $("dock");
+  const hero = $("hero");
   const modal = $("claim-modal");
   const pitModal = $("pit-modal");
   const markers = $("markers");
@@ -89,6 +90,8 @@ export function setupClaim(hooks) {
     if (r.ok) {
       say(`⚔ slime #${agentId} is yours — keep it alive`);
       renderDock();
+      // Show the guardian drawer right away: the new pet is already in it.
+      hooks.openDrawer?.("guardian");
     } else {
       say(r.error ?? "claim failed", "bad");
     }
@@ -192,7 +195,9 @@ export function setupClaim(hooks) {
   }
 
   // -------------------------------------------------------------------------
-  // Dock: your creatures, or one giant invitation
+  // Hero + dock: the invitation lives OUTSIDE the drawer (bottom-center, the
+  // first thing a wallet-less visitor sees); the creature dock lives inside
+  // the guardian tab. One loud gold element, never two at the same time.
   // -------------------------------------------------------------------------
 
   function mySlimes() {
@@ -201,8 +206,17 @@ export function setupClaim(hooks) {
   }
 
   function renderDock() {
+    // Rail badge: how many creatures this visitor is keeping alive.
+    const badge = $("guard-count");
+    if (badge) {
+      const n = mySlimes().length;
+      badge.textContent = String(n);
+      badge.classList.toggle("hidden", !n);
+    }
+
     if (!wallet) {
-      dock.innerHTML = `
+      hero.classList.remove("hidden");
+      hero.innerHTML = `
         <div class="dock-cta">
           <div class="dock-tag">pre-chain registry · migrates on-chain at deploy</div>
           <button id="btn-hero-claim" class="hero-claim">⚔ CLAIM YOUR SLIME</button>
@@ -214,7 +228,14 @@ export function setupClaim(hooks) {
         free.sort((x, y) => x.energy - y.energy);
         openModal(free[0]?.id ?? null);
       });
+      dock.innerHTML = `
+        <div class="dock-connect">the guardian dock arms itself once a wallet is linked —
+          pick any glowing cell in the colony, or
+          <button class="dock-swap" id="btn-hero-claim">link a wallet now</button></div>`;
+      $("btn-hero-claim").addEventListener("click", () => openModal(null));
     } else {
+      hero.classList.add("hidden");
+      hero.innerHTML = "";
       const mine = mySlimes();
       const lb = (world?.leaderboard ?? []).slice(0, 6);
       const fossils = world?.fossils ?? [];

@@ -18,10 +18,10 @@
   </script>
 </head>
 <body>
-  <!-- 3D containment vessel fills the screen; HUD panels float above it. -->
+  <!-- 3D containment vessel fills the screen; one rail + one drawer float
+       above it. Panels never crowd the viewport: only one drawer is open. -->
   <div id="scene"></div>
 
-  <!-- Instrument-frame corner brackets + scanline veil (pure decoration). -->
   <div class="frame-marks" aria-hidden="true">
     <i></i><i></i><i></i><i></i>
   </div>
@@ -32,63 +32,126 @@
     <p>incubating colony…</p>
   </div>
 
-  <header class="hud top-left">
-    <div class="plate">
-      <span class="plate-no">SPECIMEN&nbsp;001</span>
-      <span class="plate-dim">/ PETRI-ARRAY · SOLANA</span>
-    </div>
+  <!-- Brand: quiet, top-left, no panel chrome. -->
+  <header class="brand">
     <h1>SLIME<span class="cursor">_</span></h1>
     <p class="sub">Interactive Evolution of Machine Life</p>
     <div id="mode" class="badge">SANDBOX · digital twin</div>
   </header>
 
-  <section class="hud top-right telemetry">
-    <div class="panel-head">
-      <span>the shared world</span>
-      <span class="season"><i class="season-track"><i id="season-bar"></i></i><b id="season-cd">–s</b></span>
+  <!-- Tool rail: every surface is one click away, nothing overlaps. -->
+  <nav class="rail" id="rail" aria-label="dashboard sections">
+    <button class="rail-btn" data-drawer="world"><i>⬡</i><span>world</span></button>
+    <button class="rail-btn" data-drawer="feed"><i>≡</i><span>chronicle</span></button>
+    <button class="rail-btn" data-drawer="curve"><i>∿</i><span>learning</span></button>
+    <button class="rail-btn" data-drawer="guardian">
+      <i>⚔</i><span>guardian</span><em id="guard-count" class="rail-badge hidden">0</em>
+    </button>
+    <button class="rail-btn" data-drawer="chain"><i>◈</i><span>chain</span></button>
+    <button class="rail-btn" data-drawer="paper"><i>?</i><span>paper</span></button>
+    <span class="rail-sep"></span>
+    <button id="btn-rotate" class="rail-btn" title="toggle auto orbit"><i>◉</i><span>orbit</span></button>
+  </nav>
+
+  <!-- The drawer: one panel at a time, slides out beside the rail. -->
+  <aside id="drawer" class="drawer hidden">
+    <div class="drawer-head">
+      <span id="drawer-title">CHRONICLE</span>
+      <button id="drawer-close" title="close (esc)">✕</button>
     </div>
-    <div class="gauges">
-      <div class="stat"><label>season</label><value id="st-epoch">0</value></div>
-      <div class="stat"><label>colony</label><value id="st-pop">1</value></div>
-      <div class="stat"><label>alive</label><value id="st-alive">1</value></div>
-      <div class="stat"><label>claimed</label><value id="st-claimed">0/0</value></div>
-      <div class="stat"><label>ever born</label><value id="st-total">1</value></div>
-      <div class="stat r0">
-        <label>R₀ · EMA</label><value id="st-r0">0.00</value>
-        <div class="gauge" title="extinct &lt; 1 &lt; epidemic">
-          <div id="g-r0" class="gauge-fill"></div>
-          <div class="gauge-mark"></div>
+    <div class="drawer-body">
+
+      <section data-p="world" class="dp hidden">
+        <div class="season-line">
+          <i class="season-track"><i id="season-bar"></i></i>
+          <b id="season-cd">–s</b><span>until next shared epoch</span>
         </div>
-      </div>
-    </div>
-  </section>
+        <div class="gauges">
+          <div class="stat"><label>season</label><value id="st-epoch">0</value></div>
+          <div class="stat"><label>colony</label><value id="st-pop">1</value></div>
+          <div class="stat"><label>alive</label><value id="st-alive">1</value></div>
+          <div class="stat"><label>claimed</label><value id="st-claimed">0/0</value></div>
+          <div class="stat"><label>ever born</label><value id="st-total">1</value></div>
+          <div class="stat r0">
+            <label>R₀ · EMA</label><value id="st-r0">0.00</value>
+            <div class="gauge" title="extinct &lt; 1 &lt; epidemic">
+              <div id="g-r0" class="gauge-fill"></div>
+              <div class="gauge-mark"></div>
+            </div>
+          </div>
+        </div>
+        <p class="dp-note">one world, one clock — every visitor watches the same
+          colony at the same epoch.</p>
+      </section>
 
-  <section class="hud bottom-left">
-    <div class="controls">
-      <button id="btn-rotate">◉ orbit</button>
-      <button id="btn-keeper">✦ chain cockpit</button>
-      <button id="btn-about">? the paper</button>
-    </div>
-    <div class="curve-wrap">
-      <div class="panel-head"><span>learning curve</span><span class="plate-dim">first-try %</span></div>
-      <canvas id="curve" width="300" height="120"></canvas>
-    </div>
-  </section>
+      <section data-p="feed" class="dp hidden">
+        <div class="feed-live"><span class="rec"><i></i>rec</span><span>the world's live log</span></div>
+        <ul id="feed"></ul>
+      </section>
 
-  <section class="hud bottom-right">
-    <div class="panel-head feed-head">
-      <span>chronicle feed</span>
-      <span class="rec"><i></i>rec</span>
+      <section data-p="curve" class="dp hidden">
+        <div class="panel-head"><span>learning curve</span><span class="plate-dim">first-try %</span></div>
+        <canvas id="curve" width="300" height="120"></canvas>
+        <p class="dp-note">first-attempt success by generation, against the
+          paper's 45–84% seen-hardware band.</p>
+      </section>
+
+      <section data-p="guardian" class="dp hidden">
+        <nav id="dock" class="rpg-dock"></nav>
+      </section>
+
+      <section data-p="chain" class="dp hidden">
+        <div class="keeper-intro">
+          <p class="muted">every token has a job: feed a slime, burn for a
+            miracle, bet the colony's R₀, name a generation. paste a wallet to
+            open its ledger.</p>
+          <div class="keeper-connect">
+            <input id="wallet-input" placeholder="Solana address of your holder wallet" spellcheck="false" />
+            <button id="btn-lookup">enter</button>
+          </div>
+        </div>
+        <div id="keeper-body" class="keeper-body">
+          <p class="muted empty">the keeper economy arms itself on-chain: feeding,
+            interventions, R₀ betting and the holders' chamber all land here once
+            the program and the community token are live.</p>
+        </div>
+      </section>
+
+      <section data-p="paper" class="dp hidden">
+        <div class="panel-head"><span>from the paper to the petri dish</span><span class="plate-dim">anthropic · frt</span></div>
+        <p>Inspired by the Anthropic Frontier Red Team post
+          <i>“AI models may be capable of self-replicating without access to a
+          datacenter”</i> (2026-10-12). This colony replays the post's dynamics
+          as pure sandbox math:</p>
+        <ul>
+          <li><b>capability floor</b> — a child can only spawn if the inherited
+            genome covers the challenge difficulty;</li>
+          <li><b>size ceiling</b> — the genome must fit the host fleet
+            (15 TV boxes at 0.39 tok/s aggregate);</li>
+          <li><b>Lamarckian notes</b> — every agent inherits the parent's
+            rewritten notebook; familiarity with seen hardware raises
+            first-attempt odds (the post's 45% → 61–84% curve);</li>
+          <li><b>R₀ under caps</b> — three-layer credit budgets keep the
+            effective reproduction rate below 1: the strain goes endemic,
+            never epidemic;</li>
+          <li><b>quarantine</b> — a blue-team sweep cages random hosts once
+            the colony grows; caged agents burn energy and starve out.</li>
+        </ul>
+        <p class="muted">Simulation only — no real network activity, no model
+          weights, no exploits. The Pit replays the same math: you train what
+          the paper measured.</p>
+      </section>
+
     </div>
-    <ul id="feed"></ul>
-  </section>
+  </aside>
+
+  <!-- Hero invitation: the one loud element for wallet-less visitors. -->
+  <div id="hero" class="hero-wrap hidden"></div>
 
   <aside id="card" class="hud report hidden"></aside>
 
-  <!-- ══ RPG layer: claim dock, wallet modal, world markers, toast ══ -->
+  <!-- ══ RPG layer: world markers, pit + wallet modals, toast ══ -->
   <div id="markers" class="markers" aria-hidden="false"></div>
-
-  <nav id="dock" class="rpg-dock"></nav>
 
   <div id="pit-modal" class="modal hidden">
     <div class="modal-card pit-card">
@@ -116,45 +179,6 @@
   </div>
 
   <div id="toast" class="toast"></div>
-
-  <aside id="keeper" class="hud keeper-panel hidden">
-    <div class="panel-head"><span>keeper cockpit</span><span class="plate-dim">holder ledger</span></div>
-    <p class="muted">every token has a job: feed a slime, burn for a miracle,
-      bet the colony's R₀, name a generation. paste a wallet to open its ledger.</p>
-    <div class="keeper-connect">
-      <input id="wallet-input" placeholder="Solana address of your holder wallet" spellcheck="false" />
-      <button id="btn-lookup">enter</button>
-    </div>
-    <div id="keeper-body" class="keeper-body">
-      <p class="muted empty">the keeper economy arms itself on-chain: feeding,
-        interventions, R₀ betting and the holders' chamber all land here once
-        the program and the community token are live.</p>
-    </div>
-  </aside>
-
-  <section id="about" class="hud paper-panel hidden">
-    <div class="panel-head"><span>from the paper to the petri dish</span><span class="plate-dim">anthropic · frontier red team</span></div>
-    <p>Inspired by the Anthropic Frontier Red Team post
-      <i>“AI models may be capable of self-replicating without access to a
-      datacenter”</i> (2026-10-12). This colony replays the post's dynamics as
-      pure sandbox math:</p>
-    <ul>
-      <li><b>capability floor</b> — a child can only spawn if the inherited
-        genome covers the challenge difficulty;</li>
-      <li><b>size ceiling</b> — the genome must fit the host fleet
-        (15 TV boxes at 0.39 tok/s aggregate);</li>
-      <li><b>Lamarckian notes</b> — every agent inherits the parent's rewritten
-        notebook; familiarity with seen hardware raises first-attempt odds
-        (the post's 45% → 61–84% curve, dashed band on the chart);</li>
-      <li><b>R₀ under caps</b> — three-layer credit budgets keep the effective
-        reproduction rate below 1: the strain goes endemic, never epidemic;</li>
-      <li><b>quarantine</b> — a blue-team sweep cages random hosts once the
-        colony grows; caged agents burn energy and starve out.</li>
-    </ul>
-    <p class="muted">Simulation only — no real network activity, no model
-      weights, no exploits. Once the on-chain program is deployed, the feed
-      and colony switch to live chronicle data.</p>
-  </section>
 
   <script type="module" src="/js/app.js"></script>
 </body>

@@ -243,7 +243,7 @@ export class ColonyScene {
     controls.enableDamping = true;
     controls.dampingFactor = 0.06;
     controls.autoRotate = true;
-    controls.autoRotateSpeed = 0.24;
+    controls.autoRotateSpeed = 0.4;
     controls.minDistance = 10;
     controls.maxDistance = 620;
     this.controls = controls;
@@ -434,7 +434,10 @@ export class ColonyScene {
     this.hovered = null;
   }
 
-  setAutoRotate(on) { this.controls.autoRotate = on; }
+    // One switch governs BOTH the turntable drift and the auto-framing dolly:
+    // if #autoFit kept re-distancing the camera after "off", orbit would look
+    // broken because the frame never truly stops moving.
+    setAutoRotate(on) { this.controls.autoRotate = on; this.fitEnabled = on; }
 
   /** Focus the camera on one agent and highlight its ancestry chain. */
   focus(agentId, colony) {
@@ -744,6 +747,7 @@ export class ColonyScene {
 
   #autoFit(dt) {
     if (!this.fitRadius) return;
+    if (this.fitEnabled === false) return;
     // Pause auto-framing for a while after the user scrolls the zoom wheel.
     if (this.time - this.lastUserZoom < 12) return;
     // Close-up when small (cells fill the frame), overview when large.
