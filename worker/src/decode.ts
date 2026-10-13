@@ -99,6 +99,7 @@ export interface ConfigView {
   daily: { day: number; spent: number };
   birthsLastEpoch: number;
   nextAgentId: number;
+  nextProposalId: number;
 }
 
 export async function parseConfig(bytes: Uint8Array): Promise<ConfigView | null> {
@@ -117,6 +118,7 @@ export async function parseConfig(bytes: Uint8Array): Promise<ConfigView | null>
     daily: { day: r.u64(), spent: r.u64() },
     birthsLastEpoch: r.u32(),
     nextAgentId: r.u64(),
+    nextProposalId: r.u64(),
   };
 }
 
@@ -186,6 +188,102 @@ export interface StrainView {
   lastEpoch: number;
 }
 
+export interface VaultView {
+  creditsSpawn: number;
+  creditsProposals: number;
+  creditsFossils: number;
+  creditsGranted: number;
+  creditsGross: number;
+  lastFeeEpoch: number;
+}
+
+export async function parseVault(bytes: Uint8Array): Promise<VaultView | null> {
+  if (!(await matches(bytes, "account", "Vault"))) return null;
+  const r = new ByteReader(bytes);
+  r.skip(8);
+  r.u8(); // bump
+  return {
+    creditsSpawn: r.u64(),
+    creditsProposals: r.u64(),
+    creditsFossils: r.u64(),
+    creditsGranted: r.u64(),
+    creditsGross: r.u64(),
+    lastFeeEpoch: r.u64(),
+  };
+}
+
+export const PROPOSAL_STATUS = ["Active", "Passed", "Rejected", "Executed"] as const;
+
+export interface ProposalView {
+  id: number;
+  proposer: number[];
+  kind: number; // 1 = ParamChange, 2 = Grant
+  paramKey: number;
+  paramValue: number;
+  grantAgent: number;
+  votesFor: number;
+  votesAgainst: number;
+  createdEpoch: number;
+  endsEpoch: number;
+  status: (typeof PROPOSAL_STATUS)[number];
+}
+
+export async function parseProposal(bytes: Uint8Array): Promise<ProposalView | null> {
+  if (!(await matches(bytes, "account", "Proposal"))) return null;
+  const r = new ByteReader(bytes);
+  r.skip(8);
+  r.u8(); // bump
+  const v: ProposalView = {
+    id: r.u64(),
+    proposer: r.bytes(32),
+    kind: r.u8(),
+    paramKey: r.u8(),
+    paramValue: r.u64(),
+    grantAgent: r.u64(),
+    votesFor: r.u64(),
+    votesAgainst: r.u64(),
+    createdEpoch: r.u64(),
+    endsEpoch: r.u64(),
+    status: "Active",
+  };
+  v.status = PROPOSAL_STATUS[Math.min(r.u8(), 3)];
+  return v;
+}
+
+export interface FossilView {
+  agentId: number;
+  generation: number;
+  strainRoot: number;
+  capability: number;
+  sizeKb: number;
+  notesCommit: number[];
+  wins: number;
+  losses: number;
+  quarantined: boolean;
+  mintedEpoch: number;
+  minter: number[];
+}
+
+export async function parseFossil(bytes: Uint8Array): Promise<FossilView | null> {
+  if (!(await matches(bytes, "account", "Fossil"))) return null;
+  const r = new ByteReader(bytes);
+  r.skip(8);
+  r.u8(); // bump
+  return {
+    agentId: r.u64(),
+    generation: r.u32(),
+    strainRoot: r.u64(),
+    capability: r.u16(),
+    sizeKb: r.u16(),
+    notesCommit: r.bytes(32),
+    wins: r.u16(),
+    losses: r.u16(),
+    quarantined: r.u8() !== 0,
+    mintedEpoch: r.u64(),
+    minter: r.bytes(32),
+  };
+}
+
 export async function parseStrain(bytes: Uint8Array): Promise<StrainView | null> {
   if (!(await matches(bytes, "account", "Strain"))) return null;
   const r = new ByteReader(bytes);
@@ -205,7 +303,10 @@ export async function parseStrain(bytes: Uint8Array): Promise<StrainView | null>
 // Events (program data logs)
 // ---------------------------------------------------------------------------
 
-const EVENT_NAMES = ["Birth", "Death", "Hatched", "Quarantined", "EpochSettled"] as const;
+const EVENT_NAMES = [
+  "Birth", "Death", "Hatched", "Quarantined", "EpochSettled",
+  "TreasuryAccrue", "ProposalCreated", "ProposalExecuted", "FossilMinted",
+] as const;
 
 export interface EventView {
   kind: (typeof EVENT_NAMES)[number];
@@ -242,6 +343,28 @@ export async function decodeEvent(base64: string): Promise<EventView | null> {
         case "EpochSettled":
           fields.epoch = r.u64();
           fields.r0EmaX1000 = r.u32();
+          break;
+        case "TreasuryAccrue":
+          fields.source = r.u8();
+          fields.amount = r.u64();
+          fields.grossTotal = r.u64();
+          break;
+        case "ProposalCreated":
+          fields.id = r.u64();
+          fields.kind = r.u8();
+          fields.endsEpoch = r.u64();
+          break;
+        case "ProposalExecuted":
+          fields.id = r.u64();
+          fields.passed = r.u8();
+          fields.votesFor = r.u64();
+          fields.votesAgainst = r.u64();
+          break;
+        case "FossilMinted":
+          fields.agentId = r.u64();
+          fields.generation = r.u32();
+          fields.wins = r.u16();
+          fields.quarantined = r.u8();
           break;
       }
       return { kind: name, fields };

@@ -13,6 +13,18 @@ export const GENESIS_ENERGY = 100n;
 export const HATCH_ENERGY = 10n;
 export const NO_PARENT = 0xffffffffffffffffn;
 
+// Value-layer constants (mirrors lib.rs): fees accrue to the vault ledger.
+// NOTE: the program is token-agnostic by design — the protocol never mints
+// or holds a tradable token; credits are an internal ledger. Community
+// token issuance happens externally (pump.fun), outside this program.
+export const PROPOSAL_FEE = 500;
+export const FOSSIL_FEE = 1000;
+export const VOTE_QUORUM = 5000;      // per-mille weight units
+export const RELAX_MAX_PCT = 25;      // max cap loosening per passed vote
+export const GRANT_MAX_DIVISOR = 10n; // grant <= gross/10
+export const FOSSIL_MIN_WINS = 10;
+export const FOSSIL_MIN_GEN = 5;
+
 /** Credit price of a spawn (integer floor divisions, matching Rust). */
 export function spawnCost(sizeKb, capability) {
   return 100 + Math.trunc((50 * sizeKb) / 512) + Math.trunc((100 * capability) / 50);
@@ -59,4 +71,7 @@ export const TAGS = {
   DEATH: 4,
   QUARANTINE: 5,
   RELEASE: 6,
+  PROPOSAL: 7,
+  FOSSIL: 8,
+  GRANT: 9,
 };

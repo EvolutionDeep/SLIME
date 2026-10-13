@@ -22,6 +22,16 @@
 //!     (blue-team section: drive R0 below 1).
 //!   - caps / breaker    : murmur-style immutable-after-init economic caps
 //!     and an emergency brake that freezes spawning but never the chronicle.
+//!
+//! Value layers (what participation is actually worth, see docs/LITEPAPER.md):
+//!   1. Treasury         : every spawn/proposal/fossil fee accrues to an
+//!      on-chain vault ledger — protocol cashflow is auditable forever.
+//!   2. Governance       : agents vote on the protocol's own survival
+//!      parameters (caps, grant spending). Safety floors are hard-coded:
+//!      a passed vote can loosen a cap by at most 25% per proposal.
+//!   3. Lineage fossils  : legendary or infamous agents (>=10 wins, >= gen 5,
+//!      or quarantined) can be minted into an immutable on-chain memorial —
+//!      scarce digital heritage backed by real contest records.
 
 use anchor_lang::prelude::*;
 use sha2::{Digest, Sha256};
@@ -45,11 +55,29 @@ pub const HATCH_ENERGY: u64 = 10;
 /// Sentinel parent id for patient zero.
 pub const NO_PARENT: u64 = u64::MAX;
 
+/// Credit fee to open a governance proposal (anti-spam, accrues to vault).
+pub const PROPOSAL_FEE: u64 = 500;
+/// Credit fee to mint a lineage fossil (accrues to vault).
+pub const FOSSIL_FEE: u64 = 1_000;
+/// Minimum total vote weight (per-mille units) for a proposal to bind.
+pub const VOTE_QUORUM: u64 = 5_000;
+/// A passed vote may raise a cap by at most this percentage per proposal.
+pub const RELAX_MAX_PCT: u64 = 25;
+/// A passed grant may move at most 1/10 of the treasury balance.
+pub const GRANT_MAX_DIVISOR: u64 = 10;
+/// Fossil scarcity gates: legend by merit, or infamy by quarantine.
+pub const FOSSIL_MIN_WINS: u16 = 10;
+pub const FOSSIL_MIN_GEN: u32 = 5;
+
 /// Generous fixed account sizes (8-byte discriminator included).
 pub const CONFIG_SIZE: usize = 8 + 256;
 pub const AGENT_SIZE: usize = 8 + 256;
 pub const PROOF_SIZE: usize = 8 + 96;
 pub const STRAIN_SIZE: usize = 8 + 96;
+pub const VAULT_SIZE: usize = 8 + 96;
+pub const PROPOSAL_SIZE: usize = 8 + 160;
+pub const VOTE_SIZE: usize = 8 + 32;
+pub const FOSSIL_SIZE: usize = 8 + 128;
 
 // ---------------------------------------------------------------------------
 // Types
@@ -109,6 +137,8 @@ pub struct Config {
     pub daily: DayBook,
     pub births_last_epoch: u32,
     pub next_agent_id: u64,
+    /// Monotonic proposal counter for governance PDAs.
+    pub next_proposal_id: u64,
 }
 
 #[account]
@@ -161,6 +191,94 @@ pub struct Strain {
     pub last_epoch: u64,
 }
 
+/// Protocol treasury: pure credit ledger. Every fee the colony pays lands
+/// here, attributed by source. Real-token settlement (Token-2022) will
+/// mirror these books; the ledger is the auditable cashflow layer.
+#[account]
+pub struct Vault {
+    pub bump: u8,
+    pub credits_spawn: u64,
+    pub credits_proposals: u64,
+    pub credits_fossils: u64,
+    pub credits_granted: u64,
+    /// credits_spawn + proposals + fossils, before grants.
+    pub credits_gross: u64,
+    pub last_fee_epoch: u64,
+}
+
+/// Proposal kinds.
+#[derive(AnchorSerialize, AnchorDeserialize, Clone, Copy, PartialEq, Eq)]
+pub enum ProposalKind {
+    /// Change one whitelisted parameter (cap values, u64).
+    ParamChange,
+    /// Grant treasury credits to an agent's energy.
+    Grant,
+}
+
+/// Governance parameter keys whitelisted for ParamChange proposals.
+/// The breaker and authority are deliberately NOT votable — they stay
+/// emergency-only, mirroring the murmur lesson that safety rails must not
+/// be reachable by sentiment.
+pub const PARAM_CAP_DAILY: u8 = 1;
+pub const PARAM_CAP_PER_AGENT: u8 = 2;
+pub const PARAM_CAP_PER_TXN: u8 = 3;
+
+#[derive(AnchorSerialize, AnchorDeserialize, Clone, Copy, PartialEq, Eq)]
+pub enum ProposalStatus {
+    Active,
+    Passed,
+    Rejected,
+    Executed,
+}
+
+#[account]
+pub struct Proposal {
+    pub bump: u8,
+    pub id: u64,
+    pub proposer: Pubkey,
+    pub kind: ProposalKind,
+    /// ParamChange: which whitelisted key.
+    pub param_key: u8,
+    /// ParamChange: new value. Grant: amount.
+    pub param_value: u64,
+    /// Grant target agent id (u64::MAX for ParamChange).
+    pub grant_agent: u64,
+    /// Vote weight tallies, per-mille units (weight = 1000 + fitness).
+    pub votes_for: u64,
+    pub votes_against: u64,
+    pub created_epoch: u64,
+    pub ends_epoch: u64,
+    pub status: ProposalStatus,
+}
+
+/// One ballot per (proposal, agent). PDA uniqueness is the double-vote
+/// guard; ballots are kept forever as the auditable voting record.
+#[account]
+pub struct Ballot {
+    pub bump: u8,
+    pub approve: bool,
+    pub weight: u64,
+}
+
+/// Immutable memorial of a legendary or infamous agent. Scarcity is
+/// enforced by the PDA seed (one per agent) and the merit gates; the data
+/// is the agent's final on-chain record at mint time.
+#[account]
+pub struct Fossil {
+    pub bump: u8,
+    pub agent_id: u64,
+    pub generation: u32,
+    pub strain_root: u64,
+    pub capability: u16,
+    pub size_kb: u16,
+    pub notes_commit: [u8; 32],
+    pub wins: u16,
+    pub losses: u16,
+    pub quarantined: bool,
+    pub minted_epoch: u64,
+    pub minter: Pubkey,
+}
+
 // ---------------------------------------------------------------------------
 // Events
 // ---------------------------------------------------------------------------
@@ -194,6 +312,37 @@ pub struct Quarantined {
 pub struct EpochSettled {
     pub epoch: u64,
     pub r0_ema_x1000: u32,
+}
+
+#[event]
+pub struct TreasuryAccrue {
+    /// 1 = spawn, 2 = proposal fee, 3 = fossil fee.
+    pub source: u8,
+    pub amount: u64,
+    pub gross_total: u64,
+}
+
+#[event]
+pub struct ProposalCreated {
+    pub id: u64,
+    pub kind: u8,
+    pub ends_epoch: u64,
+}
+
+#[event]
+pub struct ProposalExecuted {
+    pub id: u64,
+    pub passed: bool,
+    pub votes_for: u64,
+    pub votes_against: u64,
+}
+
+#[event]
+pub struct FossilMinted {
+    pub agent_id: u64,
+    pub generation: u32,
+    pub wins: u16,
+    pub quarantined: bool,
 }
 
 // ---------------------------------------------------------------------------
@@ -247,6 +396,9 @@ const TAG_EPOCH: u8 = 3;
 const TAG_DEATH: u8 = 4;
 const TAG_QUARANTINE: u8 = 5;
 const TAG_RELEASE: u8 = 6;
+const TAG_PROPOSAL: u8 = 7;
+const TAG_FOSSIL: u8 = 8;
+const TAG_GRANT: u8 = 9;
 
 // ---------------------------------------------------------------------------
 // Instructions
@@ -274,11 +426,20 @@ pub mod slime {
         cfg.chronicle_seq = 0;
         cfg.births_last_epoch = 0;
         cfg.next_agent_id = 1; // id 0 is reserved for patient zero
+        cfg.next_proposal_id = 0;
         cfg.caps = caps;
         cfg.daily = DayBook {
             day: slot / DAY_SLOTS,
             spent: 0,
         };
+        let v = &mut ctx.accounts.vault;
+        v.bump = ctx.bumps.vault;
+        v.credits_spawn = 0;
+        v.credits_proposals = 0;
+        v.credits_fossils = 0;
+        v.credits_granted = 0;
+        v.credits_gross = 0;
+        v.last_fee_epoch = 0;
         Ok(())
     }
 
@@ -485,6 +646,16 @@ pub mod slime {
             day,
             spent: p_book.spent + cost,
         };
+        // Spawn fees accrue to the protocol treasury (value layer 1).
+        let v = &mut ctx.accounts.vault;
+        v.credits_spawn += cost;
+        v.credits_gross += cost;
+        v.last_fee_epoch = epoch;
+        emit!(TreasuryAccrue {
+            source: 1,
+            amount: cost,
+            gross_total: v.credits_gross,
+        });
         let cfg = &mut ctx.accounts.config;
         cfg.daily = DayBook {
             day,
@@ -618,6 +789,214 @@ pub mod slime {
         cfg.breaker = flag;
         Ok(())
     }
+
+    /// Governance, step 1: open a proposal on a whitelisted parameter or a
+    /// treasury grant. The fee is anti-spam and accrues to the vault.
+    pub fn create_proposal(
+        ctx: Context<CreateProposal>,
+        kind: ProposalKind,
+        param_key: u8,
+        param_value: u64,
+        grant_agent: u64,
+        duration_epochs: u64,
+    ) -> Result<()> {
+        let cfg = &mut ctx.accounts.config;
+        require!(!cfg.breaker, SlimeError::BreakerOn);
+        let epoch = Clock::get()?.slot / cfg.epoch_len_slots;
+        require!(
+            duration_epochs >= 2 && duration_epochs <= 64,
+            SlimeError::BadConfig
+        );
+        match kind {
+            ProposalKind::ParamChange => {
+                require!(
+                    (PARAM_CAP_DAILY..=PARAM_CAP_PER_TXN).contains(&param_key),
+                    SlimeError::UnknownParam
+                );
+                // Hard safety floor: a vote can never zero out a cap.
+                require!(param_value >= 100, SlimeError::BadConfig);
+            }
+            ProposalKind::Grant => {
+                require!(
+                    ctx.accounts.grant_target.id == grant_agent,
+                    SlimeError::BadProof
+                );
+                let v = &ctx.accounts.vault;
+                require!(
+                    param_value
+                        <= v.credits_gross.saturating_sub(v.credits_granted)
+                            / GRANT_MAX_DIVISOR,
+                    SlimeError::GrantTooBig
+                );
+            }
+        }
+        let p = &mut ctx.accounts.proposal;
+        p.bump = ctx.bumps.proposal;
+        p.id = cfg.next_proposal_id;
+        cfg.next_proposal_id += 1;
+        p.proposer = ctx.accounts.proposer.key();
+        p.kind = kind;
+        p.param_key = param_key;
+        p.param_value = param_value;
+        p.grant_agent = grant_agent;
+        p.votes_for = 0;
+        p.votes_against = 0;
+        p.created_epoch = epoch;
+        p.ends_epoch = epoch + duration_epochs;
+        p.status = ProposalStatus::Active;
+
+        let v = &mut ctx.accounts.vault;
+        v.credits_proposals += PROPOSAL_FEE;
+        v.credits_gross += PROPOSAL_FEE;
+        v.last_fee_epoch = epoch;
+        cfg.append(TAG_PROPOSAL, p.id);
+        emit!(ProposalCreated {
+            id: p.id,
+            kind: match kind {
+                ProposalKind::ParamChange => 1,
+                ProposalKind::Grant => 2,
+            },
+            ends_epoch: p.ends_epoch,
+        });
+        Ok(())
+    }
+
+    /// Governance, step 2: an alive agent casts one weighted ballot.
+    /// Weight = 1000 + fitness/10: experienced lineages count more, but no
+    /// single agent can ever outweigh a determined colony.
+    pub fn vote(ctx: Context<Vote>, proposal_id: u64, approve: bool) -> Result<()> {
+        let (epoch_len,) = {
+            let cfg = &ctx.accounts.config;
+            (cfg.epoch_len_slots,)
+        };
+        let epoch = Clock::get()?.slot / epoch_len;
+        let p = &mut ctx.accounts.proposal;
+        require!(p.id == proposal_id, SlimeError::BadProof);
+        require!(p.status == ProposalStatus::Active, SlimeError::AlreadyExecuted);
+        require!(epoch <= p.ends_epoch, SlimeError::ProposalEnded);
+        let a = &ctx.accounts.agent;
+        require!(a.status == AgentStatus::Alive, SlimeError::DeadAgent);
+        let weight = 1_000 + (a.fitness as u64) / 10;
+        let b = &mut ctx.accounts.ballot;
+        b.bump = ctx.bumps.ballot;
+        b.approve = approve;
+        b.weight = weight;
+        if approve {
+            p.votes_for += weight;
+        } else {
+            p.votes_against += weight;
+        }
+        Ok(())
+    }
+
+    /// Governance, step 3: anyone may settle a closed proposal. Passage
+    /// needs quorum AND a majority. ParamChange enforces the hard-coded
+    /// loosen limit (max +25% per proposal); tightening is unbounded.
+    pub fn execute_proposal(ctx: Context<ExecuteProposal>, proposal_id: u64) -> Result<()> {
+        let cfg = &mut ctx.accounts.config;
+        let epoch = Clock::get()?.slot / cfg.epoch_len_slots;
+        let p = &mut ctx.accounts.proposal;
+        require!(p.id == proposal_id, SlimeError::BadProof);
+        require!(p.status == ProposalStatus::Active, SlimeError::AlreadyExecuted);
+        require!(epoch > p.ends_epoch, SlimeError::ProposalEnded);
+
+        let total = p.votes_for + p.votes_against;
+        let passed = total >= VOTE_QUORUM && p.votes_for > p.votes_against;
+        if passed {
+            match p.kind {
+                ProposalKind::ParamChange => {
+                    let caps = &mut cfg.caps;
+                    let (cur, slot) = match p.param_key {
+                        PARAM_CAP_DAILY => (caps.daily, 0u8),
+                        PARAM_CAP_PER_AGENT => (caps.per_agent, 1u8),
+                        PARAM_CAP_PER_TXN => (caps.per_txn, 2u8),
+                        _ => return err!(SlimeError::UnknownParam),
+                    };
+                    let new = p.param_value;
+                    if new > cur {
+                        require!(
+                            new <= cur * (100 + RELAX_MAX_PCT) / 100,
+                            SlimeError::CapLoosenTooMuch
+                        );
+                    }
+                    match slot {
+                        0 => caps.daily = new,
+                        1 => caps.per_agent = new,
+                        _ => caps.per_txn = new,
+                    }
+                }
+                ProposalKind::Grant => {
+                    let v = &mut ctx.accounts.vault;
+                    let available = v.credits_gross - v.credits_granted;
+                    require!(p.param_value <= available / GRANT_MAX_DIVISOR, SlimeError::GrantTooBig);
+                    let a = &mut ctx.accounts.grant_target;
+                    require!(
+                        a.status == AgentStatus::Alive || a.status == AgentStatus::Egg,
+                        SlimeError::DeadAgent
+                    );
+                    a.energy = a.energy.saturating_add(p.param_value);
+                    v.credits_granted += p.param_value;
+                    cfg.append(TAG_GRANT, p.grant_agent);
+                }
+            }
+            p.status = ProposalStatus::Passed;
+        } else {
+            p.status = ProposalStatus::Rejected;
+        }
+        cfg.append(TAG_PROPOSAL, p.id);
+        emit!(ProposalExecuted {
+            id: p.id,
+            passed,
+            votes_for: p.votes_for,
+            votes_against: p.votes_against,
+        });
+        Ok(())
+    }
+
+    /// Value layer 3: memorialize a legendary or infamous agent. Gates are
+    /// deliberately narrow — fossils must stay scarce and mean something.
+    pub fn mint_fossil(ctx: Context<MintFossil>, agent_id: u64) -> Result<()> {
+        let cfg = &mut ctx.accounts.config;
+        require!(!cfg.breaker, SlimeError::BreakerOn);
+        let epoch = Clock::get()?.slot / cfg.epoch_len_slots;
+        let a = &ctx.accounts.agent;
+        require!(a.id == agent_id, SlimeError::BadProof);
+        let infamous = a.status == AgentStatus::Quarantined;
+        let legendary = a.wins >= FOSSIL_MIN_WINS || a.generation >= FOSSIL_MIN_GEN;
+        require!(legendary || infamous, SlimeError::NotLegendary);
+
+        let f = &mut ctx.accounts.fossil;
+        f.bump = ctx.bumps.fossil;
+        f.agent_id = a.id;
+        f.generation = a.generation;
+        f.strain_root = a.strain_root;
+        f.capability = a.genome.capability;
+        f.size_kb = a.genome.size_kb;
+        f.notes_commit = a.notes_commit;
+        f.wins = a.wins;
+        f.losses = a.losses;
+        f.quarantined = infamous;
+        f.minted_epoch = epoch;
+        f.minter = ctx.accounts.minter.key();
+
+        let v = &mut ctx.accounts.vault;
+        v.credits_fossils += FOSSIL_FEE;
+        v.credits_gross += FOSSIL_FEE;
+        v.last_fee_epoch = epoch;
+        cfg.append(TAG_FOSSIL, agent_id);
+        emit!(FossilMinted {
+            agent_id,
+            generation: a.generation,
+            wins: a.wins,
+            quarantined: infamous,
+        });
+        emit!(TreasuryAccrue {
+            source: 3,
+            amount: FOSSIL_FEE,
+            gross_total: v.credits_gross,
+        });
+        Ok(())
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -660,6 +1039,18 @@ pub enum SlimeError {
     BadConfig,
     #[msg("Genesis already performed")]
     AlreadyGrown,
+    #[msg("Voting window already closed")]
+    ProposalEnded,
+    #[msg("Proposal already settled")]
+    AlreadyExecuted,
+    #[msg("Parameter not in the governance whitelist")]
+    UnknownParam,
+    #[msg("Passed vote may not loosen a cap by more than 25% per proposal")]
+    CapLoosenTooMuch,
+    #[msg("Grant exceeds the per-proposal treasury limit")]
+    GrantTooBig,
+    #[msg("Agent is neither legendary nor infamous enough for a fossil")]
+    NotLegendary,
 }
 
 // ---------------------------------------------------------------------------
@@ -678,6 +1069,14 @@ pub struct Initialize<'info> {
         bump
     )]
     pub config: Account<'info, Config>,
+    #[account(
+        init,
+        payer = authority,
+        space = VAULT_SIZE,
+        seeds = [b"vault"],
+        bump
+    )]
+    pub vault: Account<'info, Vault>,
     pub system_program: Program<'info, System>,
 }
 
@@ -775,6 +1174,8 @@ pub struct Spawn<'info> {
         bump
     )]
     pub strain: Account<'info, Strain>,
+    #[account(mut, seeds = [b"vault"], bump)]
+    pub vault: Account<'info, Vault>,
     pub system_program: Program<'info, System>,
 }
 
@@ -848,4 +1249,106 @@ pub struct SetBreaker<'info> {
     pub authority: Signer<'info>,
     #[account(mut, seeds = [b"config"], bump)]
     pub config: Account<'info, Config>,
+}
+
+#[derive(Accounts)]
+pub struct CreateProposal<'info> {
+    #[account(mut)]
+    pub proposer: Signer<'info>,
+    #[account(mut, seeds = [b"config"], bump)]
+    pub config: Account<'info, Config>,
+    #[account(
+        init,
+        payer = proposer,
+        space = PROPOSAL_SIZE,
+        seeds = [b"proposal", config.next_proposal_id.to_le_bytes().as_ref()],
+        bump
+    )]
+    pub proposal: Account<'info, Proposal>,
+    #[account(mut, seeds = [b"vault"], bump)]
+    pub vault: Account<'info, Vault>,
+    /// Checked only for Grant kind; a dummy (agent 0) passes for ParamChange.
+    /// CHECK: validated conditionally in the handler via id match.
+    #[account(mut)]
+    pub grant_target: Account<'info, Agent>,
+    pub system_program: Program<'info, System>,
+}
+
+#[derive(Accounts)]
+#[instruction(proposal_id: u64, approve: bool)]
+pub struct Vote<'info> {
+    #[account(mut)]
+    pub voter: Signer<'info>,
+    #[account(seeds = [b"config"], bump)]
+    pub config: Account<'info, Config>,
+    #[account(
+        mut,
+        seeds = [b"proposal", proposal_id.to_le_bytes().as_ref()],
+        bump
+    )]
+    pub proposal: Account<'info, Proposal>,
+    #[account(
+        mut,
+        seeds = [b"agent", agent.id.to_le_bytes().as_ref()],
+        bump
+    )]
+    pub agent: Account<'info, Agent>,
+    #[account(
+        init,
+        payer = voter,
+        space = VOTE_SIZE,
+        seeds = [
+            b"vote",
+            proposal_id.to_le_bytes().as_ref(),
+            agent.id.to_le_bytes().as_ref()
+        ],
+        bump
+    )]
+    pub ballot: Account<'info, Ballot>,
+    pub system_program: Program<'info, System>,
+}
+
+#[derive(Accounts)]
+#[instruction(proposal_id: u64)]
+pub struct ExecuteProposal<'info> {
+    /// CHECK: settlement is permissionless; caller only pays the tx fee.
+    pub executor: Signer<'info>,
+    #[account(mut, seeds = [b"config"], bump)]
+    pub config: Account<'info, Config>,
+    #[account(
+        mut,
+        seeds = [b"proposal", proposal_id.to_le_bytes().as_ref()],
+        bump
+    )]
+    pub proposal: Account<'info, Proposal>,
+    #[account(mut, seeds = [b"vault"], bump)]
+    pub vault: Account<'info, Vault>,
+    /// Mutated only for Grant proposals.
+    #[account(mut)]
+    pub grant_target: Account<'info, Agent>,
+}
+
+#[derive(Accounts)]
+#[instruction(agent_id: u64)]
+pub struct MintFossil<'info> {
+    #[account(mut)]
+    pub minter: Signer<'info>,
+    #[account(mut, seeds = [b"config"], bump)]
+    pub config: Account<'info, Config>,
+    #[account(
+        seeds = [b"agent", agent_id.to_le_bytes().as_ref()],
+        bump
+    )]
+    pub agent: Account<'info, Agent>,
+    #[account(
+        init,
+        payer = minter,
+        space = FOSSIL_SIZE,
+        seeds = [b"fossil", agent_id.to_le_bytes().as_ref()],
+        bump
+    )]
+    pub fossil: Account<'info, Fossil>,
+    #[account(mut, seeds = [b"vault"], bump)]
+    pub vault: Account<'info, Vault>,
+    pub system_program: Program<'info, System>,
 }

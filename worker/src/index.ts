@@ -6,6 +6,9 @@
 //   GET /api/agents?limit=      fleet listing
 //   GET /api/agent/:id          one agent
 //   GET /api/strain/:root       one strain (R0 EMA lives here)
+//   GET /api/treasury           vault ledger (fee cashflow)
+//   GET /api/proposals          governance proposals, newest first
+//   GET /api/fossils            lineage fossil registry
 //   GET /api/chronicle          recent lifecycle events
 // Everything else falls through to static assets (public/).
 
@@ -83,6 +86,19 @@ export default {
       if (strainMatch) {
         const s = await chain(env).fetchStrain(Number(strainMatch[1]));
         return s ? json(s) : json({ error: "strain not found" }, 404);
+      }
+
+      if (path === "/api/treasury") {
+        const v = await chain(env).fetchVault();
+        return v ? json(v) : json({ error: "vault account not found" }, 404);
+      }
+
+      if (path === "/api/proposals") {
+        return json(await chain(env).fetchProposals());
+      }
+
+      if (path === "/api/fossils") {
+        return json(await chain(env).fetchFossils());
       }
 
       if (path === "/api/chronicle") {

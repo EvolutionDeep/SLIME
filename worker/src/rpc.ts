@@ -1,17 +1,24 @@
 // rpc.ts — Thin chain-access layer for the SLIME program.
 // Read paths use raw JSON-RPC via web3.js Connection; PDA seeds mirror
-// the program (["agent", le8(id)], ["strain", le8(root)], ["config"]).
+// the program (["agent", le8(id)], ["strain", le8(root)], ["config"],
+// ["vault"], ["proposal", le8(id)], ["fossil", le8(agent_id)]).
 
 import { Connection, PublicKey } from "@solana/web3.js";
 import {
   parseConfig,
   parseAgent,
   parseStrain,
+  parseVault,
+  parseProposal,
+  parseFossil,
   decodeEvent,
   le8,
   type ConfigView,
   type AgentView,
   type StrainView,
+  type VaultView,
+  type ProposalView,
+  type FossilView,
   type EventView,
 } from "./decode";
 
@@ -19,6 +26,9 @@ import {
 const CONFIG_SPACE = 8 + 256;
 const AGENT_SPACE = 8 + 256;
 const STRAIN_SPACE = 8 + 96;
+const VAULT_SPACE = 8 + 96;
+const PROPOSAL_SPACE = 8 + 160;
+const FOSSIL_SPACE = 8 + 128;
 
 export class SlimeChain {
   readonly conn: Connection;
@@ -41,6 +51,21 @@ export class SlimeChain {
   strainPda(root: number): PublicKey {
     return PublicKey.findProgramAddressSync(
       [Buffer.from("strain"), le8(root)],
+      this.pid,
+    )[0];
+  }
+  vaultPda(): PublicKey {
+    return PublicKey.findProgramAddressSync([Buffer.from("vault")], this.pid)[0];
+  }
+  proposalPda(id: number): PublicKey {
+    return PublicKey.findProgramAddressSync(
+      [Buffer.from("proposal"), le8(id)],
+      this.pid,
+    )[0];
+  }
+  fossilPda(agentId: number): PublicKey {
+    return PublicKey.findProgramAddressSync(
+      [Buffer.from("fossil"), le8(agentId)],
       this.pid,
     )[0];
   }
@@ -78,6 +103,42 @@ export class SlimeChain {
     return parseStrain(acc.data);
   }
 
+  async fetchVault(): Promise<VaultView | null> {
+    const acc = await this.conn.getAccountInfo(this.vaultPda());
+    if (!acc) return null;
+    return parseVault(acc.data);
+  }
+
+  /** All governance proposals, newest first (size filter + disc check). */
+  async fetchProposals(limit = 50): Promise<ProposalView[]> {
+    const accs = await this.conn.getProgramAccounts(this.pid, {
+      filters: [{ dataSize: PROPOSAL_SPACE }],
+    });
+    const out: ProposalView[] = [];
+    for (const { account } of accs) {
+      const v = await parseProposal(account.data);
+      if (v) out.push(v);
+      if (out.length >= limit) break;
+    }
+    out.sort((a, b) => b.id - a.id);
+    return out;
+  }
+
+  /** The lineage fossil registry (scarce by protocol rules). */
+  async fetchFossils(limit = 100): Promise<FossilView[]> {
+    const accs = await this.conn.getProgramAccounts(this.pid, {
+      filters: [{ dataSize: FOSSIL_SPACE }],
+    });
+    const out: FossilView[] = [];
+    for (const { account } of accs) {
+      const v = await parseFossil(account.data);
+      if (v) out.push(v);
+      if (out.length >= limit) break;
+    }
+    out.sort((a, b) => b.mintedEpoch - a.mintedEpoch);
+    return out;
+  }
+
   /** Recent lifecycle events, read from Config-account transaction logs.
    *  Bounded scan: `depth` signatures, `max` decoded transactions (cost cap). */
   async recentEvents(depth = 25, max = 10): Promise<EventView[]> {
@@ -109,4 +170,4 @@ export class SlimeChain {
   }
 }
 
-export { CONFIG_SPACE, STRAIN_SPACE };
+export { CONFIG_SPACE, STRAIN_SPACE, VAULT_SPACE, PROPOSAL_SPACE, FOSSIL_SPACE };
