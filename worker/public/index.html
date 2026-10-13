@@ -44,6 +44,7 @@
       <button id="btn-speed">×1</button>
       <button id="btn-reset">⟲ new seed</button>
       <button id="btn-rotate">◉ orbit</button>
+      <button id="btn-keeper">🜛 my slimes</button>
       <button id="btn-about">? the paper</button>
     </div>
     <div class="curve-wrap">
@@ -58,6 +59,21 @@
   </section>
 
   <aside id="card" class="hud hidden"></aside>
+
+  <aside id="keeper" class="hud keeper-panel hidden">
+    <h2>keeper cockpit</h2>
+    <p class="muted">every token has a job: feed a slime, burn for a miracle,
+      bet the colony's R₀, name a generation. paste a wallet to open its ledger.</p>
+    <div class="keeper-connect">
+      <input id="wallet-input" placeholder="Solana address of your holder wallet" spellcheck="false" />
+      <button id="btn-lookup">enter</button>
+    </div>
+    <div id="keeper-body" class="keeper-body">
+      <p class="muted empty">the keeper economy arms itself on-chain: feeding,
+        interventions, R₀ betting and the holders' chamber all land here once
+        the program and the community token are live.</p>
+    </div>
+  </aside>
 
   <section id="about" class="hud paper-panel hidden">
     <h2>From the paper to the petri dish</h2>

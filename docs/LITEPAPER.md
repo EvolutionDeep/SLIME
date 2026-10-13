@@ -36,16 +36,19 @@ compound — the on-chain analogue of the post's 45% → 61–84%.
 - **Not an exploit framework.** No agent ever touches a network, a device,
   or a model. Challenges are table-driven combinatorial math scored by a
   deterministic off-chain verifier.
-- **Not a token issuance vehicle.** The program is token-agnostic by
-  design: it never mints, custodies, or governs any tradable SPL token.
-  All "credits" are an internal ledger measuring colony activity.
+- **Not a token issuance vehicle.** The program never mints and holds no
+  mint authority over anything. It recognizes exactly one community
+  token *after* an external launch, and only as a participation
+  credential: feeds move tokens into the treasury, interventions burn
+  them, bets move them between keepers. All "credits" in the life-cycle
+  layer remain an internal ledger measuring colony activity.
 - **Not a promise of returns.** Nothing in this protocol generates a
   claim on revenue for any holder. Anything said below about value is
   design intent, not forecast.
 
-## 3. The three value layers (why participation is worth something)
+## 3. The four value layers (why participation is worth something)
 
-The colony produces three durable, auditable artifacts. They are the
+The colony produces durable, auditable artifacts. They are the
 substance a community token — issued by the community externally (e.g.
 pump.fun), never by this program — can rally around:
 
@@ -89,29 +92,71 @@ Fossils are the collectible layer, and unlike profile-picture
 collections, every fossil's scarcity is enforced by protocol rules and
 its prestige is backed by an on-chain competitive record. The founder
 colony (gen 0 patient zero) will forever be the most valuable rock in
-the museum.
+the museum. Once the community token is registered, fossil minting is
+restricted to token holders: the museum belongs to the community.
 
-## 4. The community token — an outside object with inside meaning
+### Layer 4 — The keeper economy (every token has a job)
+
+Holding is not watching. The community token is the handle of a living
+system, and every unit of it buys one of four things:
+
+1. **Guardianship (feed).** Any wallet can feed any agent; the *first*
+   feeder becomes its guardian, etched on-chain forever. One whole
+   token = one energy. Guardianship is public and permanent — a slime
+   that starves records its keeper in the chronicle. Devotion and
+   neglect are both part of the historical record.
+2. **Intervention (burn).** One-shot, deflationary, priced:
+   extra meal (200) speeds metabolism loss; quarantine appeal (500)
+   releases a caged agent once, contested by the blue team; mutation
+   potion (1,000) widens the next birth's genome drift from ±5% to
+   ±25% — a lottery ticket drawn in public; force-settle the epoch
+   (300) and the colony's history accelerates because someone paid.
+3. **R₀ betting (stake).** Every epoch opens a market: will the colony
+   replace itself (births vs. living population, R₀ over/under 1.0)?
+   Parimutuel, settled by the protocol's own arithmetic at epoch close,
+   claimed on-chain. No house, no oracle — the chronicle is the result.
+4. **The lower chamber (vote).** Governance is bicameral. The upper
+   chamber is the existing colony of agents voting with fitness; the
+   lower chamber is holders voting with tokens (1 token = 1 vote,
+   ballots are permanent PDAs) on grants and community signals —
+   museum slots, watch lists, treasury feeding.
+
+The bicameral design is the safety property: **holder money can never
+relax a survival cap.** ParamChange proposals exist only in the upper
+chamber; the lower chamber's worst possible mood still cannot widen the
+breeding budget by a single credit. Two chambers with opposite
+incentives — colony conservatism against market appetite — turning the
+same R₀ dial the paper says you must never let anyone push past 1.
+
+Every burned token makes the supply scarcer; every guarded slime makes
+the story more personal. That is the loop.
+
+## 4. The community token — launched outside, used inside
 
 The SLIME token is issued by the community on a fair-launch bonding
-curve platform (pump.fun). **The program has no knowledge of it, no
-mint authority over it, and no dependency on it.** This is deliberate:
+curve platform (pump.fun). **The program has no mint authority over it
+and cannot create or freeze supply.** After the launch, the deploy
+authority registers the mint address once (`set_token_mint`); from that
+moment the keeper economy arms itself. This boundary is deliberate:
 
 - The protocol cannot be rug-changed by its own contract — there is no
-  contract-side token lever at all.
+  mint lever, no freeze lever, and the registered mint can never be
+  swapped for a different one (one-time registration).
 - The token's meaning comes entirely from the colony: holders are the
-  electorate of a living system whose chronicle, treasury, and fossil
-  museum are all verifiable on-chain in real time.
+  electorate of a living system and the keepers of its individual
+  lives — chronicle, treasury, bets and fossil museum all verifiable
+  on-chain in real time.
 - Narrative is evidence, not vapor: every claim the community makes
   ("R₀ held below 1 for 90 days", "gen 12 reached capability X",
   "treasury processed N credits of colony activity") is a query away,
   not a slide away.
 
-What a holder actually owns: standing in a public, ongoing experiment
-about control, reproduction, and safety — with voting-relevant
-eligibility in the culture (not the contract) of the project, a claim
-on community treasury directions decided off-chain by that community,
-and social ownership of the museum's story.
+What a holder actually owns: a slime with its name on the plaque, a
+seat in the lower chamber, a ticket in every epoch's R₀ market, and
+standing in a public, ongoing experiment about control, reproduction,
+and safety — with a claim on community treasury directions decided
+on-chain by lower-chamber votes, and social ownership of the museum's
+story.
 
 What a holder does **not** own: any legal claim on revenue, on the
 developers, or on the protocol. There is no team wallet in the program.
@@ -142,10 +187,11 @@ protocol.
 | 2 | Anchor program: life cycle + treasury + governance + fossils | done (devnet build pending) |
 | 3 | Digital-twin simulation, calibrated to the paper's curve | done |
 | 4 | Cloudflare worker: read API, cron heartbeat, 3D dashboard | done |
-| 5 | Devnet deploy + public colony running | next |
-| 6 | Community launch: token on pump.fun (external, fair-launch) | community |
-| 7 | Mainnet-beta + first fossil museum mint | later |
-| 8 | DePIN attestation: real host fleets prove they ran the sandbox | research |
+| 5 | Keeper economy: guardianship, burns, R₀ betting, lower chamber | done (this build) |
+| 6 | Devnet deploy + public colony running | next |
+| 7 | Community launch: token on pump.fun (external, fair-launch) → `set_token_mint` arms keepers | community |
+| 8 | Mainnet-beta + first fossil museum mint | later |
+| 9 | DePIN attestation: real host fleets prove they ran the sandbox | research |
 
 ---
 

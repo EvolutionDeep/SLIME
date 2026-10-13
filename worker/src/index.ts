@@ -9,10 +9,14 @@
 //   GET /api/treasury           vault ledger (fee cashflow)
 //   GET /api/proposals          governance proposals, newest first
 //   GET /api/fossils            lineage fossil registry
+//   GET /api/market/:epoch      R0 betting market for one epoch
+//   GET /api/generations        named-generation honor board
+//   GET /api/my/:address        keeper cockpit aggregate for one wallet
 //   GET /api/chronicle          recent lifecycle events
 // Everything else falls through to static assets (public/).
 
 import { SlimeChain } from "./rpc";
+import { bs58Encode } from "./decode";
 import { runCron } from "./cron";
 
 export interface Env {
@@ -56,12 +60,19 @@ export default {
         } catch {
           /* blocked or unreachable */
         }
-        const deployed = rpcOk ? await c.programDeployed().catch(() => false) : false;
+        const codeAtAddress = rpcOk ? await c.programDeployed().catch(() => false) : false;
+        // The scaffold placeholder id collides with a live example program
+        // on devnet — mere code presence is a false positive. Our deployment
+        // is only proven once our own Config PDA (seeded + discriminator)
+        // actually exists.
+        const ours = codeAtAddress
+          ? (await c.fetchConfig().catch(() => null)) !== null
+          : false;
         return json({
           ok: true,
           ts: Date.now(),
           rpcOk,
-          programDeployed: deployed,
+          programDeployed: ours,
           verifierKeyConfigured: Boolean(env.VERIFIER_KEY),
         });
       }
@@ -99,6 +110,49 @@ export default {
 
       if (path === "/api/fossils") {
         return json(await chain(env).fetchFossils());
+      }
+
+      const marketMatch = path.match(/^\/api\/market\/(\d+)$/);
+      if (marketMatch) {
+        const m = await chain(env).fetchMarket(Number(marketMatch[1]));
+        return m ? json(m) : json({ error: "market not opened for that epoch" }, 404);
+      }
+
+      if (path === "/api/generations") {
+        return json(await chain(env).fetchGenerations());
+      }
+
+      const myMatch = path.match(/^\/api\/my\/([1-9A-HJ-NP-Za-km-z]{32,44})$/);
+      if (myMatch) {
+        // Keeper cockpit: agents I guard, tickets I placed, fossils I minted,
+        // generations I named, plus the token registry state.
+        const addr = myMatch[1];
+        const c = chain(env);
+        const [cfg, agents, fossils, bets, gens] = await Promise.all([
+          c.fetchConfig(),
+          c.fetchAgents(500),
+          c.fetchFossils(200),
+          c.fetchBetsByBidder(addr),
+          c.fetchGenerations(),
+        ]);
+        const markets = cfg
+          ? await Promise.all(
+              [...new Set(bets.map((b) => b.epoch))].map((e) => c.fetchMarket(e)),
+            )
+          : [];
+        const marketByEpoch: Record<number, unknown> = {};
+        markets.forEach((m) => {
+          if (m) marketByEpoch[m.epoch] = m;
+        });
+        return json({
+          address: addr,
+          tokenConfigured: Boolean(cfg && cfg.tokenMint.some((b) => b !== 0)),
+          currentEpoch: cfg?.currentEpoch ?? null,
+          guarded: agents.filter((a) => bs58Encode(a.guardian) === addr),
+          bets: bets.map((b) => ({ ...b, market: marketByEpoch[b.epoch] ?? null })),
+          fossils: fossils.filter((f) => bs58Encode(f.minter) === addr),
+          namedGenerations: gens.filter((g) => bs58Encode(g.namedBy) === addr),
+        });
       }
 
       if (path === "/api/chronicle") {

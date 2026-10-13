@@ -4,6 +4,7 @@
 
 import { Colony, DEFAULT_CFG, STATUS } from "./engine.js";
 import { ColonyScene } from "./scene.js";
+import { setupKeeper } from "./keeper.js";
 
 const $ = (id) => document.getElementById(id);
 
@@ -14,6 +15,7 @@ const ui = {
   feed: $("feed"), card: $("card"), curve: $("curve"),
   mode: $("mode"), pause: $("btn-pause"), speed: $("btn-speed"),
   reset: $("btn-reset"), rotate: $("btn-rotate"), about: $("about"),
+  keeper: $("keeper"), keeperBtn: $("btn-keeper"),
   aboutBtn: $("btn-about"), loading: $("loading"),
 };
 
@@ -223,6 +225,8 @@ ui.rotate.addEventListener("click", () => {
   ui.rotate.classList.toggle("off", !scene.controls.autoRotate);
 });
 ui.aboutBtn.addEventListener("click", () => ui.about.classList.toggle("hidden"));
+ui.keeperBtn.addEventListener("click", () => ui.keeper.classList.toggle("hidden"));
+setupKeeper();
 window.addEventListener("keydown", (e) => {
   if (e.code === "Space") { e.preventDefault(); ui.pause.click(); }
   if (e.key === "r") resetColony();

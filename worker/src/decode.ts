@@ -100,6 +100,8 @@ export interface ConfigView {
   birthsLastEpoch: number;
   nextAgentId: number;
   nextProposalId: number;
+  /** The externally launched community token mint; all-zero until set. */
+  tokenMint: number[];
 }
 
 export async function parseConfig(bytes: Uint8Array): Promise<ConfigView | null> {
@@ -119,6 +121,7 @@ export async function parseConfig(bytes: Uint8Array): Promise<ConfigView | null>
     birthsLastEpoch: r.u32(),
     nextAgentId: r.u64(),
     nextProposalId: r.u64(),
+    tokenMint: r.bytes(32),
   };
 }
 
@@ -140,6 +143,12 @@ export interface AgentView {
   lastTickEpoch: number;
   wins: number;
   losses: number;
+  /** Keeper wallet that first fed this agent; zero until claimed. */
+  guardian: number[];
+  lastFeedEpoch: number;
+  feeds: number;
+  potion: boolean;
+  appealEpoch: number;
 }
 
 export async function parseAgent(bytes: Uint8Array): Promise<AgentView | null> {
@@ -166,6 +175,11 @@ export async function parseAgent(bytes: Uint8Array): Promise<AgentView | null> {
     lastTickEpoch: 0,
     wins: 0,
     losses: 0,
+    guardian: [],
+    lastFeedEpoch: 0,
+    feeds: 0,
+    potion: false,
+    appealEpoch: 0,
   };
   const sIdx = r.u8();
   v.status = AGENT_STATUS[Math.min(sIdx, 3)];
@@ -176,6 +190,11 @@ export async function parseAgent(bytes: Uint8Array): Promise<AgentView | null> {
   r.u64(); // day_book.spent
   v.wins = r.u16();
   v.losses = r.u16();
+  v.guardian = r.bytes(32);
+  v.lastFeedEpoch = r.u64();
+  v.feeds = r.u16();
+  v.potion = r.u8() !== 0;
+  v.appealEpoch = r.u64();
   return v;
 }
 
@@ -217,7 +236,7 @@ export const PROPOSAL_STATUS = ["Active", "Passed", "Rejected", "Executed"] as c
 export interface ProposalView {
   id: number;
   proposer: number[];
-  kind: number; // 1 = ParamChange, 2 = Grant
+  kind: number; // 1 = ParamChange, 2 = Grant, 3 = Signal
   paramKey: number;
   paramValue: number;
   grantAgent: number;
@@ -226,6 +245,8 @@ export interface ProposalView {
   createdEpoch: number;
   endsEpoch: number;
   status: (typeof PROPOSAL_STATUS)[number];
+  /** 0 = agents' upper chamber, 1 = token holders' lower chamber. */
+  chamber: number;
 }
 
 export async function parseProposal(bytes: Uint8Array): Promise<ProposalView | null> {
@@ -245,9 +266,99 @@ export async function parseProposal(bytes: Uint8Array): Promise<ProposalView | n
     createdEpoch: r.u64(),
     endsEpoch: r.u64(),
     status: "Active",
+    chamber: 0,
   };
   v.status = PROPOSAL_STATUS[Math.min(r.u8(), 3)];
+  v.chamber = r.u8();
   return v;
+}
+
+export interface MarketView {
+  epoch: number;
+  overPool: number;
+  underPool: number;
+  /** 0 = unsettled/void, 1 = over won, 2 = under won. */
+  winner: number;
+  settled: boolean;
+}
+
+export async function parseMarket(bytes: Uint8Array): Promise<MarketView | null> {
+  if (!(await matches(bytes, "account", "EpochMarket"))) return null;
+  const r = new ByteReader(bytes);
+  r.skip(8);
+  r.u8(); // bump
+  return {
+    epoch: r.u64(),
+    overPool: r.u64(),
+    underPool: r.u64(),
+    winner: r.u8(),
+    settled: r.u8() !== 0,
+  };
+}
+
+export interface BetView {
+  bidder: number[];
+  epoch: number;
+  over: boolean;
+  amount: number;
+  claimed: boolean;
+}
+
+export async function parseBet(bytes: Uint8Array): Promise<BetView | null> {
+  if (!(await matches(bytes, "account", "BetTicket"))) return null;
+  const r = new ByteReader(bytes);
+  r.skip(8);
+  r.u8(); // bump
+  return {
+    bidder: r.bytes(32),
+    epoch: r.u64(),
+    over: r.u8() !== 0,
+    amount: r.u64(),
+    claimed: r.u8() !== 0,
+  };
+}
+
+export interface GenerationView {
+  generation: number;
+  name: string;
+  namedBy: number[];
+  heroAgent: number;
+}
+
+export async function parseGeneration(bytes: Uint8Array): Promise<GenerationView | null> {
+  if (!(await matches(bytes, "account", "GenerationName"))) return null;
+  const r = new ByteReader(bytes);
+  r.skip(8);
+  r.u8(); // bump
+  const gen = r.u64();
+  const raw = r.bytes(32);
+  const namedBy = r.bytes(32);
+  const heroAgent = r.u64();
+  const end = raw.indexOf(0);
+  const nameBytes = end >= 0 ? raw.slice(0, end) : raw;
+  return {
+    generation: gen,
+    name: new TextDecoder().decode(new Uint8Array(nameBytes)),
+    namedBy,
+    heroAgent,
+  };
+}
+
+/** Minimal base58 (Bitcoin alphabet) encoder for pubkey comparison. */
+const B58 = "123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz";
+export function bs58Encode(bytes: number[]): string {
+  let n = 0n;
+  for (const b of bytes) n = (n << 8n) | BigInt(b);
+  let s = "";
+  while (n > 0n) {
+    s = B58[Number(n % 58n)] + s;
+    n /= 58n;
+  }
+  for (const b of bytes) {
+    if (b === 0) s = "1" + s;
+    else break;
+  }
+  return s;
 }
 
 export interface FossilView {
@@ -306,6 +417,8 @@ export async function parseStrain(bytes: Uint8Array): Promise<StrainView | null>
 const EVENT_NAMES = [
   "Birth", "Death", "Hatched", "Quarantined", "EpochSettled",
   "TreasuryAccrue", "ProposalCreated", "ProposalExecuted", "FossilMinted",
+  "TokenMintSet", "GuardianFeed", "InterventionBurned",
+  "BetPlaced", "BetSettled", "BetClaimed", "GenerationNamed",
 ] as const;
 
 export interface EventView {
@@ -365,6 +478,38 @@ export async function decodeEvent(base64: string): Promise<EventView | null> {
           fields.generation = r.u32();
           fields.wins = r.u16();
           fields.quarantined = r.u8();
+          break;
+        case "GuardianFeed":
+          fields.agentId = r.u64();
+          r.skip(32); // guardian
+          fields.firstClaim = r.u8();
+          fields.tokens = r.u64();
+          fields.energyGranted = r.u64();
+          break;
+        case "InterventionBurned":
+          fields.kind = r.u8();
+          fields.agentId = r.u64();
+          fields.tokensBurnt = r.u64();
+          break;
+        case "BetPlaced":
+          fields.epoch = r.u64();
+          fields.over = r.u8();
+          fields.amount = r.u64();
+          break;
+        case "BetSettled":
+          fields.epoch = r.u64();
+          fields.winner = r.u8();
+          fields.overPool = r.u64();
+          fields.underPool = r.u64();
+          break;
+        case "BetClaimed":
+          fields.epoch = r.u64();
+          fields.payout = r.u64();
+          break;
+        case "GenerationNamed":
+          fields.generation = r.u64();
+          r.skip(32); // name
+          fields.heroAgent = r.u64();
           break;
       }
       return { kind: name, fields };

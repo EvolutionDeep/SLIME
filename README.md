@@ -11,10 +11,13 @@ a datacenter_](https://www.anthropic.com/research/self-replicating-ai)
 > devices, and transports **no** model weights. Challenges are combinatorial
 > sandbox tasks (see `scripts/verifier.mjs`).
 
-**Value layers** (treasury ledger · governance with hard safety floors ·
-lineage fossils): see [docs/LITEPAPER.md](docs/LITEPAPER.md). The program is
-token-agnostic by design — it never mints or holds any tradable token; any
-community token lives entirely outside the protocol's trust boundary.
+**Value layers** (treasury ledger · bicameral governance with hard safety
+floors · lineage fossils · keeper economy — guardianship, burned
+interventions, R₀ betting, holder votes): see
+[docs/LITEPAPER.md](docs/LITEPAPER.md). The program never mints anything:
+it recognizes exactly one externally launched community token (registered
+once after the public sale) purely as a participation credential — feeds,
+burns, stakes and lower-chamber ballots. No mint lever, no freeze lever.
 
 ## Article -> protocol mapping
 
@@ -93,6 +96,8 @@ TS2307 for that module until you build inside WSL2/Docker — everything else
    `advance_epoch`; freshness probes like `audit-live` (drift > 300s alerts).
 
 Token stance: the community token is issued externally (pump.fun fair
-launch) and the program will never mint, custody, or gate it. Treasury
-and governance stay credit-ledger based until any real-asset settlement is
-decided by the colony through governance — with the hard floors intact.
+launch); after the sale the authority registers its mint once, and the
+program only ever moves that existing supply (treasury feeds, intervention
+burns, parimutuel bets, holder ballots). It cannot mint, freeze, or swap
+the mint. Treasury and governance keep the colony's own credit ledger —
+with the hard floors intact: survival caps remain upper-chamber only.

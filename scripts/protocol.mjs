@@ -25,16 +25,31 @@ export const GRANT_MAX_DIVISOR = 10n; // grant <= gross/10
 export const FOSSIL_MIN_WINS = 10;
 export const FOSSIL_MIN_GEN = 5;
 
+// Keeper economy (value layer 4) — mirrors the Rust constants. The program
+// still never mints: it only recognizes one externally launched token.
+export const TOKEN_UNIT = 1_000_000;          // 6 decimals (pump.fun convention)
+export const FEED_MIN_TOKENS = 1;
+export const FEED_ENERGY_CAP = 50;            // 1 whole token = 1 energy, capped
+export const MEAL_BURN_TOKENS = 200;          // burn prices for interventions
+export const APPEAL_BURN_TOKENS = 500;
+export const POTION_BURN_TOKENS = 1_000;
+export const ACCELERATE_BURN_TOKENS = 300;
+export const MEAL_ENERGY = 50;
+export const POTION_DRIFT_PCT = 25;           // potion widens drift one birth
+export const BET_MIN_TOKENS = 10;             // R0 over/under staking floor
+export const HOLDER_QUORUM_TOKENS = 50_000;   // lower chamber quorum
+export const FOSSIL_MIN_TOKENS = 100;         // holder gate once token is live
+
 /** Credit price of a spawn (integer floor divisions, matching Rust). */
 export function spawnCost(sizeKb, capability) {
   return 100 + Math.trunc((50 * sizeKb) / 512) + Math.trunc((100 * capability) / 50);
 }
 
-/** Bounded +/-MAX_DRIFT_PCT mutation seeded by sha256(seed). */
-export function mutate(genome, seed) {
+/** Bounded +/-driftPct mutation seeded by sha256(seed) (potion can widen). */
+export function mutate(genome, seed, driftPct = MAX_DRIFT_PCT) {
   const d = createHash("sha256").update(seed).digest();
   const apply = (v, k) => {
-    const pct = (d[k] % (MAX_DRIFT_PCT * 2 + 1)) - MAX_DRIFT_PCT;
+    const pct = (d[k] % (driftPct * 2 + 1)) - driftPct;
     return Math.max(1, Math.trunc((v * (100 + pct)) / 100));
   };
   return { capability: apply(genome.capability, 0), size_kb: apply(genome.size_kb, 1) };

@@ -1,7 +1,8 @@
 // rpc.ts — Thin chain-access layer for the SLIME program.
 // Read paths use raw JSON-RPC via web3.js Connection; PDA seeds mirror
 // the program (["agent", le8(id)], ["strain", le8(root)], ["config"],
-// ["vault"], ["proposal", le8(id)], ["fossil", le8(agent_id)]).
+// ["vault"], ["proposal", le8(id)], ["fossil", le8(agent_id)],
+// ["market", le8(epoch)], ["bet", bidder, le8(epoch)], ["generation", le8(g)]).
 
 import { Connection, PublicKey } from "@solana/web3.js";
 import {
@@ -11,6 +12,10 @@ import {
   parseVault,
   parseProposal,
   parseFossil,
+  parseMarket,
+  parseBet,
+  parseGeneration,
+  bs58Encode,
   decodeEvent,
   le8,
   type ConfigView,
@@ -19,6 +24,9 @@ import {
   type VaultView,
   type ProposalView,
   type FossilView,
+  type MarketView,
+  type BetView,
+  type GenerationView,
   type EventView,
 } from "./decode";
 
@@ -29,6 +37,9 @@ const STRAIN_SPACE = 8 + 96;
 const VAULT_SPACE = 8 + 96;
 const PROPOSAL_SPACE = 8 + 160;
 const FOSSIL_SPACE = 8 + 128;
+const MARKET_SPACE = 8 + 48;
+const BET_SPACE = 8 + 64;
+const GENERATION_SPACE = 8 + 80;
 
 export class SlimeChain {
   readonly conn: Connection;
@@ -66,6 +77,18 @@ export class SlimeChain {
   fossilPda(agentId: number): PublicKey {
     return PublicKey.findProgramAddressSync(
       [Buffer.from("fossil"), le8(agentId)],
+      this.pid,
+    )[0];
+  }
+  marketPda(epoch: number): PublicKey {
+    return PublicKey.findProgramAddressSync(
+      [Buffer.from("market"), le8(epoch)],
+      this.pid,
+    )[0];
+  }
+  generationPda(gen: number): PublicKey {
+    return PublicKey.findProgramAddressSync(
+      [Buffer.from("generation"), le8(gen)],
       this.pid,
     )[0];
   }
@@ -139,6 +162,43 @@ export class SlimeChain {
     return out;
   }
 
+  /** One epoch's R0 betting market, if opened. */
+  async fetchMarket(epoch: number): Promise<MarketView | null> {
+    const acc = await this.conn.getAccountInfo(this.marketPda(epoch));
+    if (!acc) return null;
+    return parseMarket(acc.data);
+  }
+
+  /** All betting tickets placed by one wallet, newest epoch first. */
+  async fetchBetsByBidder(address: string, limit = 100): Promise<BetView[]> {
+    const accs = await this.conn.getProgramAccounts(this.pid, {
+      filters: [{ dataSize: BET_SPACE }],
+    });
+    const out: BetView[] = [];
+    for (const { account } of accs) {
+      const v = await parseBet(account.data);
+      if (v && bs58Encode(v.bidder) === address) out.push(v);
+      if (out.length >= limit) break;
+    }
+    out.sort((a, b) => b.epoch - a.epoch);
+    return out;
+  }
+
+  /** Named generations (keeper honor board), oldest first. */
+  async fetchGenerations(limit = 64): Promise<GenerationView[]> {
+    const accs = await this.conn.getProgramAccounts(this.pid, {
+      filters: [{ dataSize: GENERATION_SPACE }],
+    });
+    const out: GenerationView[] = [];
+    for (const { account } of accs) {
+      const v = await parseGeneration(account.data);
+      if (v) out.push(v);
+      if (out.length >= limit) break;
+    }
+    out.sort((a, b) => a.generation - b.generation);
+    return out;
+  }
+
   /** Recent lifecycle events, read from Config-account transaction logs.
    *  Bounded scan: `depth` signatures, `max` decoded transactions (cost cap). */
   async recentEvents(depth = 25, max = 10): Promise<EventView[]> {
@@ -170,4 +230,13 @@ export class SlimeChain {
   }
 }
 
-export { CONFIG_SPACE, STRAIN_SPACE, VAULT_SPACE, PROPOSAL_SPACE, FOSSIL_SPACE };
+export {
+  CONFIG_SPACE,
+  STRAIN_SPACE,
+  VAULT_SPACE,
+  PROPOSAL_SPACE,
+  FOSSIL_SPACE,
+  MARKET_SPACE,
+  BET_SPACE,
+  GENERATION_SPACE,
+};
