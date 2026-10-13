@@ -33,19 +33,31 @@ const scene = new ColonyScene(ui.scene);
 // instead of hiding instantly, and hovering the card itself pins it open.
 // Without this the CLAIM/FEED/PIT buttons are impossible to click.
 let cardHideTimer = null;
+let pinnedId = null;         // a clicked specimen keeps its card until you click away
 const cancelCardHide = () => { if (cardHideTimer) { clearTimeout(cardHideTimer); cardHideTimer = null; } };
 const scheduleCardHide = (ms) => {
+  // A selected (pinned) specimen never auto-hides on hover-out: focusing the
+  // camera slides the cell off the cursor, which used to dismiss the card the
+  // instant you clicked it. Only un-pinned "peek" cards get the grace timer.
+  if (pinnedId != null) return;
   cancelCardHide();
   cardHideTimer = setTimeout(() => ui.card.classList.add("hidden"), ms);
 };
-scene.onHover((id) => { if (id == null) scheduleCardHide(500); else { cancelCardHide(); showCard(id); } });
+scene.onHover((id) => {
+  if (pinnedId != null) return;                 // the selection owns the card
+  if (id == null) scheduleCardHide(500);
+  else { cancelCardHide(); showCard(id); }
+});
 ui.card.addEventListener("mouseenter", cancelCardHide);
 ui.card.addEventListener("mouseleave", () => scheduleCardHide(350));
-// Clicking empty water dismisses the report card instantly — no grace timer:
-// a click is a deliberate "I'm done looking at this specimen".
+// Click a specimen to PIN its card (survives the camera move); click empty
+// water to release the pin and dismiss it — a click is a deliberate choice.
 scene.onSelect((id) => {
-  if (id != null) { cancelCardHide(); scene.focus(id, colonyView); }
-  else { cancelCardHide(); ui.card.classList.add("hidden"); scene.focus(null, colonyView); }
+  if (id != null) {
+    pinnedId = id; cancelCardHide(); showCard(id); scene.focus(id, colonyView);
+  } else {
+    pinnedId = null; cancelCardHide(); ui.card.classList.add("hidden"); scene.focus(null, colonyView);
+  }
 });
 
 // ---------------------------------------------------------------------------
@@ -125,6 +137,11 @@ async function poll() {
   if (seenHeads.size > 500) seenHeads = new Set(fresh.map((e) => e.i));
   scene.handleEvents(fresh, colonyView);
   scene.sync(colonyView);
+  // If a pinned specimen died or left the dish, release the pin so hover
+  // peeking resumes instead of a card frozen on a ghost.
+  if (pinnedId != null && !colonyView.agents.has(pinnedId)) {
+    pinnedId = null; ui.card.classList.add("hidden");
+  }
   pushChronicle(fresh);
   renderStats(w);
   renderCurve(w);
