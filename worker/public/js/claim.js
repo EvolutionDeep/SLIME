@@ -18,13 +18,20 @@ const isAddr = (s) => /^[1-9A-HJ-NP-Za-km-z]{32,44}$/.test(s);
 export function setupClaim(hooks) {
   const dock = $("dock");
   const modal = $("claim-modal");
+  const pitModal = $("pit-modal");
   const markers = $("markers");
   const toast = $("toast");
 
   let wallet = localStorage.getItem(LS_WALLET) || "";
+  // Pre-chain registry has no signature gate, so a query param can link the
+  // wallet too — handy for shared links and for headless verification.
+  const qp = new URL(location.href).searchParams.get("wallet");
+  if (qp && isAddr(qp)) { wallet = qp; localStorage.setItem(LS_WALLET, qp); }
   let world = null;
   let busy = false;
-  let prevMineIds = new Set();   // last frame's flock — the dead vanish from world.agents
+  let pitAgent = null;        // slime currently entered in the pit
+  let deepPitDone = false;    // #pit-<id> opens once, after the first world lands
+  let prevMineIds = new Set(); // last frame's flock — the dead vanish from world.agents
 
   function say(msg, kind = "ok") {
     toast.textContent = msg;
@@ -96,21 +103,89 @@ export function setupClaim(hooks) {
     else say(r.error ?? "feed failed", "bad");
   }
 
+  // -------------------------------------------------------------------------
+  // The Pit: hardware challenges with paper-true odds — win capability and
+  // streaks, grow the notebook toward the host ceiling, burst = permanent.
+  // -------------------------------------------------------------------------
+
+  function openPit(agentId) {
+    pitAgent = agentId;
+    renderPit();
+    pitModal.classList.remove("hidden");
+  }
+  function closePit() { pitModal.classList.add("hidden"); pitAgent = null; }
+  $("btn-pit-close").addEventListener("click", closePit);
+  pitModal.addEventListener("click", (e) => { if (e.target === pitModal) closePit(); });
+
+  function renderPit() {
+    const a = world?.agents.find((x) => x.id === pitAgent);
+    if (!a) { closePit(); return; }
+    $("pit-agent").textContent = `SLIME #${a.id} · GEN ${a.gen}`;
+    const odds = a.pit?.odds ?? a.baseOdds ?? [];
+    const sizeKb = a.genome.size_kb + (a.pit?.sizeGain ?? 0);
+    const pct = world.hostCapKb ? (sizeKb / world.hostCapKb) * 100 : 0;
+    const fought = a.pit?.triedThisEpoch;
+    $("pit-body").innerHTML = `
+      <div class="pit-stats">
+        <span>capability <b>${a.genome.capability}</b>${a.pit?.cap ? `<span class="pit-bonus">+${a.pit.cap} pit</span>` : ""}</span>
+        <span>record <b>${a.pit ? a.pit.wins + "W " + a.pit.losses + "L" : "untouched"}</b></span>
+        <span>streak <b>${a.pit?.streak ?? 0}</b> · best <b>${a.pit?.best ?? 0}</b></span>
+      </div>
+      <div class="pit-size">
+        <label>notebook ${sizeKb.toLocaleString()} KB / ${world.hostCapKb.toLocaleString()} KB host ceiling</label>
+        <div class="sz-bar ${pct > 75 ? "danger" : ""}"><i style="width:${Math.min(100, pct)}%"></i></div>
+        <div class="sz-warn">every win writes notes — notes are mass — mass past the ceiling and the slime bursts forever</div>
+      </div>
+      <div class="pit-tiers">
+        ${world.tiers.map((t, i) => `
+          <button class="tier-btn tier-${i}" data-tier="${i}" ${fought ? "disabled" : ""}>
+            <b>${t.name}</b>
+            <span class="tier-odds">${Math.round((odds[i] ?? 0) * 100)}<em>%</em></span>
+            <span class="tier-diff">difficulty ${t.diff.toLocaleString()}</span>
+            <span class="tier-prize">win +${t.cap} cap · +${t.win}⚡ · +${t.gain}KB notes</span>
+            <span class="tier-risk">lose −${t.loss}⚡ · streak resets</span>
+            ${a.pit?.tierWins?.[i] ? `<span class="tier-fam">seen ${a.pit.tierWins[i]}×</span>` : ""}
+          </button>`).join("")}
+      </div>
+      ${fought ? `<div class="pit-cooldown">this slime already fought this epoch — the notebook needs time to dry</div>` : ""}`;
+  }
+
+  async function doTrial(tier) {
+    if (busy || !wallet || pitAgent == null) return;
+    busy = true;
+    const r = await post("/api/trial", { address: wallet, agentId: pitAgent, tier });
+    busy = false;
+    if (!r.ok) { say(r.error ?? "trial failed", "bad"); return; }
+    const t = world.tiers[tier];
+    if (r.burst) {
+      say(`☠ slime #${pitAgent} burst its host at ${t.name} — fossilized forever`, "bad");
+      closePit();
+    } else if (r.success) {
+      say(`⚔ ${t.name} cleared — cap +${t.cap}, +${t.win}⚡, notes +${t.gain}KB`);
+    } else {
+      say(`✗ ${t.name} broke it — −${t.loss}⚡, streak gone`, "bad");
+    }
+    hooks.refresh?.();   // pull the fresh world immediately, don't wait for poll
+  }
+
   // Global delegation: report-card buttons live in app.js-rendered HTML.
   document.addEventListener("click", (e) => {
-    const b = e.target.closest("[data-claim],[data-feed]");
+    const b = e.target.closest("[data-claim],[data-feed],[data-pit],[data-tier]");
     if (!b) return;
     e.stopPropagation();
     if (b.dataset.claim != null && b.dataset.claim !== "") doClaim(Number(b.dataset.claim));
     if (b.dataset.feed != null && b.dataset.feed !== "") doFeed(Number(b.dataset.feed));
+    if (b.dataset.pit != null && b.dataset.pit !== "") openPit(Number(b.dataset.pit));
+    if (b.dataset.tier != null && b.dataset.tier !== "") doTrial(Number(b.dataset.tier));
   });
 
   /** HTML for the specimen report card CTA row (consumed by app.js). */
   function cardButton(a) {
     if (a.guardian === wallet && wallet) {
-      return a.fedThisEpoch
+      const pit = a.pit ? `<button class="rp-claim pit-cta" data-pit="${a.id}">⚔ ENTER THE PIT</button>` : "";
+      return (a.fedThisEpoch
         ? `<div class="rp-claim done">✓ you fed this slime this epoch</div>`
-        : `<button class="rp-claim" data-feed="${a.id}">✦ FEED +10 ENERGY</button>`;
+        : `<button class="rp-claim" data-feed="${a.id}">✦ FEED +10 ENERGY</button>`) + pit;
     }
     if (a.guardian) return `<div class="rp-claim taken">guardianship is taken — every unclaimed slime still has a ring</div>`;
     return `<button class="rp-claim" data-claim="${a.id}">⚔ CLAIM THIS SLIME</button>`;
@@ -142,18 +217,20 @@ export function setupClaim(hooks) {
     } else {
       const mine = mySlimes();
       const lb = (world?.leaderboard ?? []).slice(0, 6);
+      const fossils = world?.fossils ?? [];
       dock.innerHTML = `
         <div class="dock-head">
           <span class="dock-you">YOUR CREATURES <b>${mine.length}</b> · guardian ${short(wallet)}
             <button class="dock-swap" id="btn-claim-more">+ claim more</button>
             <button class="dock-swap" id="btn-wallet-change">change wallet</button>
           </span>
-          <span class="dock-lb">HALL OF GUARDIANS ${lb.map((l) => `${short(l.address)}×${l.slimes}`).join(" · ") || "empty throne"}</span>
+          <span class="dock-lb">HALL OF GUARDIANS ${lb.map((l) => `${short(l.address)}×${l.slimes}⚔${l.trophies ?? 0}`).join(" · ") || "empty throne"}</span>
         </div>
         <div class="dock-cards">
           ${mine.length ? mine.map((a) => creatureCard(a)).join("") :
             `<div class="dock-empty">nothing claimed yet — hover any glowing cell and press ⚔, or the world picks one for you
               <button class="hero-claim small" id="btn-pick">⚔ CLAIM ONE FOR ME</button></div>`}
+          ${fossils.map((f) => fossilCard(f)).join("")}
         </div>`;
       $("btn-claim-more").addEventListener("click", () => openModal(null));
       $("btn-wallet-change").addEventListener("click", () => openModal(null));
@@ -166,18 +243,33 @@ export function setupClaim(hooks) {
   }
 
   function creatureCard(a) {
-    const pct = Math.max(0, Math.min(100, (a.energy / 160) * 100));
+    const pct = Math.max(0, Math.min(100, (a.energy / 200) * 100));
     const low = a.energy < 40 ? "low" : "";
     const cls = a.status === "Quarantined" ? "quar" : a.status === "Egg" ? "egg" : "";
+    const p = a.pit;
+    const sizePct = Math.round((p?.sizePct ?? 0) * 100);
     return `
       <div class="cr-card ${cls}">
         <div class="cr-top"><b>SLIME #${a.id}</b><span>gen ${a.gen}</span><span class="cr-status">${a.status}</span></div>
         <div class="cr-ebar"><i class="${low}" style="width:${pct}%"></i></div>
+        ${p ? `<div class="cr-pit-row"><span>⚔ ${p.wins}W ${p.losses}L · streak ${p.streak} · cap +${p.cap}</span></div>
+          <div class="cr-sbar ${sizePct > 75 ? "danger" : ""}" title="notebook vs host ceiling"><i style="width:${sizePct}%"></i></div>` : ""}
         <div class="cr-foot">
           <span>${a.energy}⚡ ${a.feeds ?? 0} feeds</span>
-          ${a.fedThisEpoch ? `<span class="cr-fed">fed ✓</span>` :
-            a.status === "Alive" ? `<button class="cr-feed" data-feed="${a.id}">FEED</button>` : ""}
+          <span class="cr-acts">
+            ${a.status === "Alive" ? `<button class="cr-pit" data-pit="${a.id}">⚔ PIT</button>` : ""}
+            ${a.fedThisEpoch ? `<span class="cr-fed">fed ✓</span>` :
+              a.status === "Alive" ? `<button class="cr-feed" data-feed="${a.id}">FEED</button>` : ""}
+          </span>
         </div>
+      </div>`;
+  }
+
+  function fossilCard(f) {
+    return `
+      <div class="cr-card fossil" title="gen ${f.gen} · ${f.cap} cap · ${f.wins}W/${f.losses}L">
+        <div class="cr-top"><b>☠ #${f.agent}</b><span>gen ${f.gen}</span><span class="cr-status">${f.cause}</span></div>
+        <div class="cr-foot"><span>⚔ ${f.wins} wins · best streak ${f.best}</span><span>guardian ${short(f.guardian === "wild" ? "" : f.guardian)}</span></div>
       </div>`;
   }
 
@@ -237,6 +329,12 @@ export function setupClaim(hooks) {
         }
       }
       prevMineIds = mineIds;
+    }
+    // Deep link: /#pit-7 walks straight to that slime's pit card (if yours).
+    if (!deepPitDone && world && location.hash.startsWith("#pit-")) {
+      deepPitDone = true;
+      const id = Number(location.hash.slice(5));
+      if (wallet && world.agents.some((a) => a.id === id && a.guardian === wallet)) openPit(id);
     }
   }
 

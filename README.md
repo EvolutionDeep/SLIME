@@ -66,6 +66,14 @@ the first-screen dock, keep it alive by feeding it once per epoch, and rise
 on the hall of guardians. Claims and feeds are a pre-chain registry (Worker
 KV) that migrates into on-chain guardianship when the program deploys.
 
+**The Pit** turns the paper into a game loop: run your slime through
+hardware challenges (SCOUT/RAID/STRONGHOLD) at paper-true logistic odds —
+wins buy permanent capability and streaks, but every win also writes notes,
+and notes are mass: a notebook past the 4,096 KB host ceiling **bursts the
+slime forever** (the size ceiling made lethal). Repeat exposure raises your
+tier odds — the 45% → 84% learning curve, earned. Dead and burst slimes are
+fossilized on the memorial wall with their final record.
+
 ## Run locally (any OS)
 
 ```bash

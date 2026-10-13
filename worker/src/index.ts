@@ -7,6 +7,8 @@
 //   GET /api/claims             guardian registry (pre-chain, moves on-chain)
 //   POST /api/claim             {address, agentId} — first touch claims
 //   POST /api/feed              {address, agentId} — guardian feeds its slime
+//   POST /api/trial             {address, agentId, tier} — the pit: run a
+//                               hardware challenge for cap, glory or a burst
 //   GET /api/config             protocol Config account
 //   GET /api/agents?limit=      fleet listing
 //   GET /api/agent/:id          one agent
@@ -23,7 +25,7 @@
 import { SlimeChain } from "./rpc";
 import { bs58Encode } from "./decode";
 import { runCron } from "./cron";
-import { worldView, getClaims, claimAgent, feedAgent } from "./world";
+import { worldView, getClaims, claimAgent, feedAgent, trialAgent } from "./world";
 
 export interface Env {
   RPC_URL: string;
@@ -97,9 +99,9 @@ export default {
         return json(await getClaims(env));
       }
 
-      if (request.method === "POST" && (path === "/api/claim" || path === "/api/feed")) {
+      if (request.method === "POST" && (path === "/api/claim" || path === "/api/feed" || path === "/api/trial")) {
         const body = (await request.json().catch(() => null)) as
-          | { address?: string; agentId?: number } | null;
+          | { address?: string; agentId?: number; tier?: number } | null;
         const addr = body?.address ?? "";
         const id = Number(body?.agentId);
         if (!/^[1-9A-HJ-NP-Za-km-z]{32,44}$/.test(addr) || !Number.isInteger(id) || id < 0) {
@@ -109,8 +111,12 @@ export default {
           const r = await claimAgent(env, addr, id);
           return json(r, r.ok ? 200 : 409);
         }
-        const { epoch } = await worldView(env, -1);
-        const r = await feedAgent(env, addr, id, epoch);
+        if (path === "/api/feed") {
+          const { epoch } = await worldView(env, -1);
+          const r = await feedAgent(env, addr, id, epoch);
+          return json(r, r.ok ? 200 : 409);
+        }
+        const r = await trialAgent(env, addr, id, Number(body?.tier));
         return json(r, r.ok ? 200 : 409);
       }
 

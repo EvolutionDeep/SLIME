@@ -33,7 +33,7 @@ const scene = new ColonyScene(ui.scene);
 scene.onHover((id) => showCard(id));
 scene.onSelect((id) => { if (id != null) scene.focus(id, colonyView); });
 
-const claim = setupClaim({ scene, getWorld: () => world });
+const claim = setupClaim({ scene, getWorld: () => world, refresh: () => poll() });
 
 // ---------------------------------------------------------------------------
 // Shared-world polling
@@ -47,6 +47,7 @@ function toColonyView(w) {
       energy: a.energy, genome: a.genome, notesDepth: a.notesDepth,
       wins: a.wins, losses: a.losses, birthEpoch: a.birthEpoch,
       guardian: a.guardian, feeds: a.feeds, fedThisEpoch: a.fedThisEpoch,
+      pit: a.pit, baseOdds: a.baseOdds,
     });
   }
   return {
@@ -124,6 +125,8 @@ function pushChronicle(events) {
     else if (ev.type === "death") text = `agent #${ev.agent} energy exhausted`;
     else if (ev.type === "quarantine") text = `agent #${ev.agent} swept by blue team`;
     else if (ev.type === "cap-blocked") text = `${ev.n ?? 1} spawn attempts refused by credit caps`;
+    else if (ev.type === "trial") text = `agent #${ev.agent} ${ev.ok ? "cleared" : "failed"} a pit trial at difficulty ${ev.diff}`;
+    else if (ev.type === "burst") text = `agent #${ev.agent} burst its host in the pit — fossilized`;
     const kind = ev.type === "cap-blocked" ? "cap" : ev.type;
     ui.feed.prepend(feedRow(kind, `e${ev.epoch}`, text,
       a ? `#${a.gen}g ${a.genome.capability}cap` : ""));
@@ -139,20 +142,23 @@ function showCard(id) {
   const statusColor = { Alive: "#35ffc3", Egg: "#b58cff", Quarantined: "#ff5470", Dead: "#8b98a5" }[a.status];
   const cell = (label, value) =>
     `<div class="rp-cell"><label>${label}</label><value>${value}</value></div>`;
-  const ePct = Math.max(0, Math.min(100, (a.energy / 160) * 100));
+  const ePct = Math.max(0, Math.min(100, (a.energy / 200) * 100));
   const short = (addr) => addr ? `${addr.slice(0, 4)}…${addr.slice(-4)}` : "—";
+  const pitLine = a.pit
+    ? cell("pit record", `${a.pit.wins}W / ${a.pit.losses}L<div class="rp-streak">streak ${a.pit.streak} · best ${a.pit.best} · cap +${a.pit.cap}</div>`)
+    : cell("pit record", "untouched");
   ui.card.innerHTML = `
     <div class="rp-bar" style="--c:${statusColor}"></div>
     <div class="rp-head"><b>SLIME #${a.id}</b><span class="rp-status" style="--c:${statusColor}">${a.status}</span></div>
     <div class="rp-grid">
       ${cell("generation", a.gen)}
-      ${cell("capability", a.genome.capability)}
-      ${cell("genome", a.genome.size_kb.toLocaleString() + " KB")}
+      ${cell("capability", a.genome.capability + (a.pit?.cap ?? 0))}
+      ${cell("genome", (a.genome.size_kb + (a.pit?.sizeGain ?? 0)).toLocaleString() + " KB")}
+      ${pitLine}
       ${cell("notes depth", a.notesDepth)}
       ${cell("energy", `${a.energy}<div class="rp-ebar"><i style="width:${ePct}%"></i></div>`)}
-      ${cell("wins / losses", `${a.wins} / ${a.losses}`)}
+      ${cell("wild wins / losses", `${a.wins} / ${a.losses}`)}
       ${cell("parent", a.parent == null ? "genesis" : "#" + a.parent)}
-      ${cell("feeds", a.feeds ?? 0)}
     </div>
     <div class="rp-owner">${a.guardian
       ? ` guardian <b>${short(a.guardian)}</b> — this slime belongs to someone`

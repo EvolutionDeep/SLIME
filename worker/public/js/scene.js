@@ -212,7 +212,7 @@ export class ColonyScene {
     renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
     renderer.setSize(container.clientWidth, container.clientHeight);
     renderer.toneMapping = THREE.ACESFilmicToneMapping;
-    renderer.toneMappingExposure = 0.95;
+    renderer.toneMappingExposure = 0.8;
     container.appendChild(renderer.domElement);
     this.renderer = renderer;
 
@@ -242,7 +242,9 @@ export class ColonyScene {
     composer.addPass(new RenderPass(scene, camera));
     this.bloom = new UnrealBloomPass(
       new THREE.Vector2(container.clientWidth, container.clientHeight),
-      0.5, 0.6, 0.3,   // strength, radius, threshold
+      0.4, 0.6, 0.38,   // strength, radius, threshold — dense 300+ colonies
+                        // stack additive glow; a higher threshold keeps the
+                        // cluster core readable instead of one white blob
     );
     composer.addPass(this.bloom);
     this.composer = composer;

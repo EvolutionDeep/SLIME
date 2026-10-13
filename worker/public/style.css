@@ -766,3 +766,66 @@ body {
   font-weight: 400; font-size: 9px; letter-spacing: 1.8px;
 }
 .rp-claim.done { color: var(--gold); border-color: var(--gold-hot); border-style: solid; }
+.rp-claim.pit-cta { background: none; color: var(--gold); border: 1px solid var(--gold-hot); margin-top: 8px; }
+.rp-claim.pit-cta:hover { background: rgba(255, 207, 107, 0.08); filter: none; }
+.rp-streak { font-size: 8.5px; color: var(--dim); letter-spacing: 1px; margin-top: 2px; }
+
+/* The Pit modal: odds on the table, coffin size on the wall. */
+.pit-card { width: min(520px, calc(100vw - 40px)); }
+.pit-stats {
+  display: flex; gap: 18px; flex-wrap: wrap; margin-bottom: 14px;
+  font-size: 9px; letter-spacing: 1.6px; text-transform: uppercase; color: var(--dim);
+}
+.pit-stats b { color: var(--ink); font-size: 12px; }
+.pit-bonus { color: var(--gold); font-size: 9px; margin-left: 5px; }
+.pit-size { margin-bottom: 16px; }
+.pit-size label { display: block; font-size: 8.5px; letter-spacing: 1.8px; text-transform: uppercase; color: var(--dim); margin-bottom: 5px; }
+.sz-bar { height: 6px; background: rgba(53, 255, 195, 0.08); border: 1px solid var(--line); }
+.sz-bar i { display: block; height: 100%; background: linear-gradient(90deg, var(--cyan), var(--violet)); transition: width 0.5s; }
+.sz-bar.danger { border-color: rgba(255, 84, 112, 0.5); }
+.sz-bar.danger i { background: linear-gradient(90deg, var(--amber), var(--alarm)); animation: lowPulse 1s ease-in-out infinite; }
+.sz-warn { font-size: 9px; color: var(--faint); margin-top: 6px; letter-spacing: 0.6px; }
+.pit-tiers { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; }
+.tier-btn {
+  display: flex; flex-direction: column; gap: 4px; text-align: left; cursor: pointer;
+  background: rgba(255, 207, 107, 0.03); border: 1px solid var(--line); padding: 12px 12px 10px;
+  font-family: var(--mono); transition: border-color 0.15s, background 0.15s, transform 0.1s;
+}
+.tier-btn:hover:not(:disabled) { border-color: var(--gold); background: rgba(255, 207, 107, 0.08); transform: translateY(-2px); }
+.tier-btn:disabled { opacity: 0.35; cursor: not-allowed; }
+.tier-btn b { font-family: var(--display); font-weight: 600; font-size: 11px; letter-spacing: 2px; color: #eafff8; }
+.tier-odds { font-size: 26px; font-weight: 800; color: var(--gold); line-height: 1; font-variant-numeric: tabular-nums; }
+.tier-odds em { font-size: 12px; font-style: normal; color: var(--dim); }
+.tier-btn:nth-child(3) .tier-odds { color: var(--red); } /* STRONGHOLD reads deadly */
+.tier-diff { font-size: 8.5px; letter-spacing: 1.4px; text-transform: uppercase; color: var(--dim); }
+.tier-prize { font-size: 9px; color: var(--neon); }
+.tier-risk { font-size: 9px; color: var(--red); opacity: 0.8; }
+.tier-fam { font-size: 8px; letter-spacing: 1.6px; text-transform: uppercase; color: var(--violet); }
+.pit-cooldown { margin-top: 12px; font-size: 9.5px; letter-spacing: 1.4px; text-transform: uppercase; color: var(--amber); }
+
+/* Creature card pit overlay: record line, ceiling bar, PIT button. */
+.cr-pit-row { font-size: 9px; color: var(--gold); letter-spacing: 0.8px; margin-bottom: 5px; }
+.cr-sbar { height: 3px; background: rgba(181, 140, 255, 0.12); margin-bottom: 7px; }
+.cr-sbar i { display: block; height: 100%; background: var(--violet); }
+.cr-sbar.danger i { background: var(--red); animation: lowPulse 1s ease-in-out infinite; }
+.cr-acts { display: inline-flex; gap: 6px; align-items: center; }
+.cr-pit {
+  cursor: pointer; font-family: var(--mono); font-size: 8.5px; font-weight: 600;
+  letter-spacing: 1.6px; color: var(--gold); background: none;
+  border: 1px solid var(--gold-hot); padding: 4px 9px;
+}
+.cr-pit:hover { background: rgba(255, 207, 107, 0.1); }
+
+/* Fossils: the memorial cards at the end of the dock. */
+.cr-card.fossil {
+  border-left-color: var(--faint); background: rgba(10, 14, 16, 0.9);
+  opacity: 0.72; filter: saturate(0.4);
+}
+.cr-card.fossil .cr-top b { color: var(--dim); }
+.cr-card.fossil .cr-status { color: var(--amber); }
+
+/* Chronicle feed colors for pit outcomes. */
+.ev-trial .dot { background: var(--gold); box-shadow: 0 0 8px var(--gold-hot); }
+.ev-trial .tag { color: var(--gold); border-color: var(--gold-hot); }
+.ev-burst .dot { background: var(--alarm); box-shadow: 0 0 10px rgba(255, 34, 68, 0.7); }
+.ev-burst .tag { color: var(--red); border-color: rgba(255, 84, 112, 0.4); }

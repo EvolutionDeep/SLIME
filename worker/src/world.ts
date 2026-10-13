@@ -21,9 +21,50 @@ const SNAP_KEY = "snap";
 const META_KEY = "meta";
 const CLAIMS_KEY = "claims";
 const FEEDS_KEY = "feeds";
+const PIT_KEY = "pit";
+const FOSSILS_KEY = "fossils";
 const CHRONICLE_KEEP = 80;
 const FEEDS_KEEP = 2000;
+const FOSSILS_KEEP = 24;
 const CATCHUP_CAP = 400; // max ticks computed in one request
+
+// ---------------------------------------------------------------------------
+// The Pit: guardians run their claimed slimes through hardware challenges
+// straight out of the paper — capability floor (tier difficulty), Lamarckian
+// notes (each win grows the notebook AND the genome), the learning curve
+// (repeat exposure to a tier raises odds, the post's 45% -> 61-84%), and the
+// size ceiling (a bloated notebook bursts the host: permanent death).
+// ---------------------------------------------------------------------------
+
+export const TIERS = [
+  { name: "SCOUT", diff: 1500, cap: 20, gain: 120, win: 12, loss: 15 },
+  { name: "RAID", diff: 1900, cap: 40, gain: 240, win: 24, loss: 30 },
+  { name: "STRONGHOLD", diff: 2400, cap: 60, gain: 360, win: 36, loss: 45 },
+];
+const HOST_CAP_KB = 4096;   // cfg.host.max_size_kb: the genome's coffin size
+const LOGISTIC_TEMP = 150;  // same solver temperature as the wild engine
+const FAMILIARITY_PER_WIN = 40;
+const FAMILIARITY_MAX = 300;
+
+interface PitStats {
+  cap: number;        // taming capability bonus (permanent)
+  wins: number;
+  losses: number;
+  streak: number;
+  best: number;       // best streak — the trophy number
+  sizeGain: number;   // KB of notes grown toward the host ceiling
+  tierWins: number[]; // familiarity per tier — the learning curve, earned
+  energy: number;     // accumulated energy delta from trials
+  lastEpoch: number;  // one trial per slime per epoch
+  trials: number;     // nonce for the deterministic roll
+}
+
+interface Fossil {
+  agent: number; gen: number; guardian: string;
+  cap: number; wins: number; losses: number; best: number;
+  sizeKb: number; cause: string; epoch: number; t: number;
+}
+
 
 export interface WorldEnv {
   WORLD?: KVNamespace;
@@ -42,6 +83,8 @@ interface LogEvent {
   from?: number;
   gen?: number;
   n?: number; // aggregated count for cap-blocked floods
+  ok?: boolean; // pit trial outcome
+  diff?: number; // pit tier difficulty
 }
 
 interface Snap {
@@ -182,6 +225,120 @@ export async function feedAgent(
 }
 
 // ---------------------------------------------------------------------------
+// The Pit: trial rolls, bursting, fossilization.
+// ---------------------------------------------------------------------------
+
+/** Server-side deterministic roll: same (seed, slime, epoch, nonce) = same fate. */
+function roll(seed: number, agentId: number, epoch: number, nonce: number): number {
+  let h = Math.imul(seed >>> 0, 2654435761) ^ Math.imul(agentId + 1, 40503)
+    ^ Math.imul(epoch + 7, 2246822519) ^ Math.imul(nonce + 13, 3266489917);
+  h ^= h >>> 15; h = Math.imul(h, 2246822519); h ^= h >>> 13;
+  return (h >>> 0) / 4294967296;
+}
+
+/** Win odds a guardian faces — shown in the UI before committing, rolled after. */
+export function trialOdds(agent: { genome: { capability: number }; notesDepth: number },
+  pit: PitStats, tierIdx: number): number {
+  const t = TIERS[tierIdx];
+  const fam = Math.min(FAMILIARITY_MAX, (pit?.tierWins?.[tierIdx] ?? 0) * FAMILIARITY_PER_WIN);
+  const wild = Math.min(600, agent.notesDepth * 60); // engine familiarity
+  const eff = agent.genome.capability + wild + (pit?.cap ?? 0) + fam;
+  return 1 / (1 + Math.exp(-(eff - t.diff) / LOGISTIC_TEMP));
+}
+
+const emptyPit = (): PitStats => ({
+  cap: 0, wins: 0, losses: 0, streak: 0, best: 0, sizeGain: 0,
+  tierWins: [0, 0, 0], energy: 0, lastEpoch: -1, trials: 0,
+});
+
+async function fossilize(
+  env: WorldEnv, claims: Claims, fossils: Fossil[], pits: Record<string, PitStats>,
+  agentId: number, cause: string, gen: number, cap: number, sizeKb: number, epoch: number,
+): Promise<void> {
+  const p = pits[String(agentId)];
+  fossils.push({
+    agent: agentId, gen, guardian: claims[String(agentId)]?.a ?? "wild",
+    cap: cap + (p?.cap ?? 0), wins: p?.wins ?? 0, losses: p?.losses ?? 0,
+    best: p?.best ?? 0, sizeKb, cause, epoch, t: Date.now(),
+  });
+  if (fossils.length > FOSSILS_KEEP) fossils.splice(0, fossils.length - FOSSILS_KEEP);
+  delete claims[String(agentId)];
+  if (pits) delete pits[String(agentId)];
+  if (env.WORLD) {
+    await env.WORLD.put(FOSSILS_KEY, JSON.stringify(fossils));
+    await env.WORLD.put(CLAIMS_KEY, JSON.stringify(claims));
+    await env.WORLD.put(PIT_KEY, JSON.stringify(pits));
+  }
+}
+
+export async function trialAgent(
+  env: WorldEnv, address: string, agentId: number, tierIdx: number,
+): Promise<{
+  ok: boolean; error?: string; success?: boolean; p?: number;
+  pit?: PitStats; burst?: boolean; energyDelta?: number;
+}> {
+  if (!(tierIdx >= 0 && tierIdx < TIERS.length)) return { ok: false, error: "unknown tier" };
+  const claims = await getClaims(env);
+  const c = claims[String(agentId)];
+  if (!c) return { ok: false, error: "only a guardian can run a slime in the pit" };
+  if (c.a !== address) return { ok: false, error: "this slime belongs to someone else" };
+
+  const { colony, snap, meta } = await getWorld(env);
+  const a = colony.agents.get(agentId);
+  if (!a || a.status !== STATUS.Alive) return { ok: false, error: "your slime is not alive to fight" };
+
+  const pits = await readJson<Record<string, PitStats>>(env, PIT_KEY, {});
+  const pit = pits[String(agentId)] ?? emptyPit();
+  if (pit.lastEpoch === colony.epoch) {
+    return { ok: false, error: "already fought this epoch — the notebook needs time to dry" };
+  }
+  pit.lastEpoch = colony.epoch;
+  pit.trials++;
+
+  const t = TIERS[tierIdx];
+  const p = trialOdds(a, pit, tierIdx);
+  const success = roll(meta.seed, agentId, colony.epoch, pit.trials) < p;
+  let energyDelta: number;
+  let burst = false;
+  if (success) {
+    pit.cap += t.cap;
+    pit.sizeGain += t.gain;
+    pit.wins++;
+    pit.streak++;
+    pit.best = Math.max(pit.best, pit.streak);
+    pit.tierWins[tierIdx]++;
+    pit.energy += t.win;
+    energyDelta = t.win;
+  } else {
+    pit.losses++;
+    pit.streak = 0;
+    pit.energy -= t.loss;
+    energyDelta = -t.loss;
+  }
+  // The paper's ceiling, made lethal: notes past the host coffin burst the slime.
+  const totalSize = a.genome.size_kb + pit.sizeGain;
+  burst = totalSize >= HOST_CAP_KB;
+
+  pits[String(agentId)] = pit;
+  if (env.WORLD) await env.WORLD.put(PIT_KEY, JSON.stringify(pits));
+
+  snap.log.push({
+    i: snap.logSeq++, epoch: colony.epoch,
+    type: burst ? "burst" : "trial", agent: agentId, diff: t.diff, ok: success,
+  });
+  if (snap.log.length > CHRONICLE_KEEP) snap.log.splice(0, snap.log.length - CHRONICLE_KEEP);
+  snap.colony = colony.snapshot();
+  if (env.WORLD) await env.WORLD.put(SNAP_KEY, JSON.stringify(snap));
+
+  if (burst) {
+    const fossils = await readJson<Fossil[]>(env, FOSSILS_KEY, []);
+    await fossilize(env, claims, fossils, pits, agentId, "notebook burst",
+      a.gen, a.genome.capability, totalSize, colony.epoch);
+  }
+  return { ok: true, success, p, pit, burst, energyDelta };
+}
+
+// ---------------------------------------------------------------------------
 // View: the JSON the whole world renders from.
 // ---------------------------------------------------------------------------
 
@@ -190,6 +347,8 @@ export async function worldView(env: WorldEnv, since = -1) {
   const { colony, snap, meta } = await getWorld(env);
   const claims = await getClaims(env);
   const feeds = await readJson<Feed[]>(env, FEEDS_KEY, []);
+  const pits = await readJson<Record<string, PitStats>>(env, PIT_KEY, {});
+  let fossils = await readJson<Fossil[]>(env, FOSSILS_KEY, []);
 
   // Feed boosts: 1 epoch of energy per recent feed, capped like on-chain.
   const feedCount: Record<number, number> = {};
@@ -199,8 +358,29 @@ export async function worldView(env: WorldEnv, since = -1) {
     if (lastFeed[f.agent] === undefined || f.epoch > lastFeed[f.agent]) lastFeed[f.agent] = f.epoch;
   }
 
+  // Lazy fossilization: a claimed slime that died in the wild gets a
+  // headstone and its guardianship is released — the registry only ever
+  // holds the living. Runs on read, so it also covers cron-less local dev.
+  const fossilIds = new Set(fossils.map((f) => f.agent));
+  let fossilsDirty = false;
+  for (const key of Object.keys(claims)) {
+    const id = Number(key);
+    if (fossilIds.has(id)) continue;
+    const a = colony.agents.get(id);
+    if (a && a.status !== STATUS.Dead) continue;
+    await fossilize(env, claims, fossils, pits, id, "died in the wild",
+      a?.gen ?? 0, a?.genome.capability ?? 0, a?.genome.size_kb ?? 0, colony.epoch);
+    fossilsDirty = true;
+  }
+  if (fossilsDirty) fossils = await readJson<Fossil[]>(env, FOSSILS_KEY, fossils);
+
   const guardianCount: Record<string, number> = {};
+  const guardianTrophies: Record<string, number> = {};
   for (const c of Object.values(claims)) guardianCount[c.a] = (guardianCount[c.a] ?? 0) + 1;
+  for (const [id, p] of Object.entries(pits)) {
+    const g = claims[id];
+    if (g) guardianTrophies[g.a] = (guardianTrophies[g.a] ?? 0) + p.wins;
+  }
 
   const agents = [];
   let alive = 0, eggs = 0, quarantined = 0, pop = 0, claimed = 0;
@@ -212,20 +392,33 @@ export async function worldView(env: WorldEnv, since = -1) {
     else if (a.status === STATUS.Quarantined) quarantined++;
     const g = claims[String(a.id)];
     if (g) claimed++;
+    const pit = pits[String(a.id)];
     agents.push({
       id: a.id, gen: a.gen, parent: a.parent, status: a.status,
-      energy: Math.min(160, a.energy + Math.min(50, (feedCount[a.id] ?? 0) * 10)),
+      energy: Math.min(200, a.energy + Math.min(50, (feedCount[a.id] ?? 0) * 10)
+        + (pit?.energy ?? 0)),
       genome: a.genome, notesDepth: a.notesDepth,
       wins: a.wins, losses: a.losses, birthEpoch: a.birthEpoch,
       guardian: g ? g.a : null,
       feeds: feedCount[a.id] ?? 0,
       fedThisEpoch: lastFeed[a.id] === colony.epoch,
+      // Pit overlay: null until this slime has fought in the pit.
+      pit: pit ? {
+        cap: pit.cap, wins: pit.wins, losses: pit.losses, streak: pit.streak,
+        best: pit.best, sizeGain: pit.sizeGain, tierWins: pit.tierWins,
+        triedThisEpoch: pit.lastEpoch === colony.epoch,
+        // How close the notebook is to the coffin: burst progress 0..1.
+        sizePct: Math.min(1, (a.genome.size_kb + pit.sizeGain) / HOST_CAP_KB),
+        odds: TIERS.map((_, i) => Number(trialOdds(a, pit, i).toFixed(3))),
+      } : null,
+      // Odds preview for un-pitted slimes too (what a first trial would face).
+      baseOdds: pit ? undefined : TIERS.map((_, i) => Number(trialOdds(a, emptyPit(), i).toFixed(3))),
     });
   }
 
   const leaderboard = Object.entries(guardianCount)
     .sort((x, y) => y[1] - x[1]).slice(0, 12)
-    .map(([address, slimes]) => ({ address, slimes }));
+    .map(([address, slimes]) => ({ address, slimes, trophies: guardianTrophies[address] ?? 0 }));
 
   return {
     seed: meta.seed,
@@ -236,7 +429,10 @@ export async function worldView(env: WorldEnv, since = -1) {
     r0ema: Number(colony.r0ema.toFixed(3)),
     maxGen: colony.maxGen,
     totalEver: colony.totalEver,
-    stats: { alive, eggs, quarantined, pop, claimed },
+    stats: { alive, eggs, quarantined, pop, claimed, fossils: fossils.length },
+    tiers: TIERS,
+    hostCapKb: HOST_CAP_KB,
+    fossils: fossils.slice(-12).reverse(),
     firstTry: [...colony.firstTry.entries()],
     agents,
     chronicle: snap.log.filter((e) => e.i > since),
