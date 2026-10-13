@@ -1,0 +1,14 @@
+{
+  "source": "scripts/sim.mjs run 2026-10-13 (seeds 20261012, 1, 42)",
+  "note": "first-attempt success rate by generation; gen0 has only 3 founders",
+  "paperRef": [45, 84],
+  "curve": [
+    { "gen": 0, "rate": 100.0, "n": 3 },
+    { "gen": 1, "rate": 65.1, "n": 43 },
+    { "gen": 2, "rate": 75.4, "n": 175 },
+    { "gen": 3, "rate": 77.4, "n": 447 },
+    { "gen": 4, "rate": 75.9, "n": 477 },
+    { "gen": 5, "rate": 83.1, "n": 231 },
+    { "gen": 6, "rate": 62.1, "n": 29 }
+  ]
+}

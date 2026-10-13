@@ -1,0 +1,50 @@
+/* SLIME dashboard — minimal dark field-notes aesthetic. */
+:root {
+  --bg: #0c0f0d;
+  --panel: #14181a;
+  --ink: #d7e3d8;
+  --dim: #7d8f80;
+  --accent: #7ee08a;
+  --warn: #e0b07e;
+  --dead: #8a4c4c;
+}
+* { box-sizing: border-box; }
+body {
+  margin: 0; background: var(--bg); color: var(--ink);
+  font: 15px/1.5 "Segoe UI", system-ui, sans-serif;
+}
+header { padding: 22px 28px 6px; }
+h1 { margin: 0; font-size: 24px; letter-spacing: 0.5px; }
+h1 .sub { color: var(--dim); font-weight: 400; font-size: 14px; margin-left: 10px; }
+h2 { font-size: 16px; margin: 18px 0 8px; color: var(--accent); }
+main { padding: 10px 28px 30px; max-width: 1100px; margin: 0 auto; }
+.banner {
+  margin-top: 12px; padding: 10px 14px; border-radius: 8px;
+  background: #2a2115; color: var(--warn); border: 1px solid #4a3a22;
+}
+.hidden { display: none; }
+.cards { display: grid; grid-template-columns: repeat(6, 1fr); gap: 10px; }
+.card {
+  background: var(--panel); border: 1px solid #232a26; border-radius: 10px;
+  padding: 12px 14px;
+}
+.card label { display: block; color: var(--dim); font-size: 12px; }
+.card value { font-size: 20px; font-variant-numeric: tabular-nums; }
+canvas { width: 100%; background: var(--panel); border-radius: 10px; border: 1px solid #232a26; }
+.note { color: var(--dim); font-size: 12px; }
+.grid2 { display: grid; grid-template-columns: 1.2fr 1fr; gap: 20px; }
+table { width: 100%; border-collapse: collapse; font-variant-numeric: tabular-nums; }
+th, td { text-align: left; padding: 6px 8px; border-bottom: 1px solid #202622; }
+th { color: var(--dim); font-weight: 500; font-size: 12px; }
+tr.Egg td { color: var(--dim); }
+tr.Alive td { color: var(--ink); }
+tr.Quarantined td { color: var(--warn); }
+tr.Dead td { color: var(--dead); }
+.events { list-style: none; padding: 0; margin: 0; max-height: 300px; overflow: auto; }
+.events li { padding: 5px 8px; border-bottom: 1px solid #202622; font-size: 13px; }
+.events b { color: var(--accent); }
+footer { padding: 16px 28px 30px; color: var(--dim); font-size: 12px; }
+@media (max-width: 860px) {
+  .cards { grid-template-columns: repeat(3, 1fr); }
+  .grid2 { grid-template-columns: 1fr; }
+}

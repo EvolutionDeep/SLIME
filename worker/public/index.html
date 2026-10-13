@@ -1,0 +1,59 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>SLIME — Solana Interactive Evolution of Machine Life</title>
+  <link rel="stylesheet" href="/style.css" />
+</head>
+<body>
+  <header>
+    <h1>SLIME <span class="sub">a sandboxed digital slime mold on Solana</span></h1>
+    <div id="banner" class="banner hidden"></div>
+  </header>
+
+  <main>
+    <section class="cards">
+      <div class="card"><label>Epoch</label><value id="c-epoch">–</value></div>
+      <div class="card"><label>Population</label><value id="c-pop">–</value></div>
+      <div class="card"><label>Alive</label><value id="c-alive">–</value></div>
+      <div class="card"><label>R0 (EMA ×1000)</label><value id="c-r0">–</value></div>
+      <div class="card"><label>Chronicle seq</label><value id="c-seq">–</value></div>
+      <div class="card"><label>Breaker</label><value id="c-breaker">–</value></div>
+    </section>
+
+    <section>
+      <h2>Lineage learning curve</h2>
+      <p class="note" id="curve-note">
+        Simulation snapshot from docs/SIM_RESULTS.md (first-attempt success by
+        generation). Replaced by on-chain chronicle data once the program is live.
+      </p>
+      <canvas id="curve" width="900" height="260"></canvas>
+    </section>
+
+    <section class="grid2">
+      <div>
+        <h2>Fleet</h2>
+        <table id="agents">
+          <thead>
+            <tr><th>id</th><th>gen</th><th>cap</th><th>size KB</th><th>fitness</th><th>energy</th><th>status</th></tr>
+          </thead>
+          <tbody><tr class="empty"><td colspan="7">not connected yet</td></tr></tbody>
+        </table>
+      </div>
+      <div>
+        <h2>Recent chronicle events</h2>
+        <ul id="events" class="events"><li>not connected yet</li></ul>
+      </div>
+    </section>
+  </main>
+
+  <footer>
+    <p>Inspired by Anthropic Frontier Red Team, “AI models may be capable of
+    self-replicating without access to a datacenter” (2026-10-12). Simulation only —
+    no real network activity, no weights, no exploits.</p>
+  </footer>
+
+  <script src="/app.js"></script>
+</body>
+</html>

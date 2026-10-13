@@ -1,0 +1,27 @@
+name = "slime-worker"
+main = "src/index.ts"
+compatibility_date = "2026-10-01"
+compatibility_flags = ["nodejs_compat"]
+
+# Dashboard + assets served by the same Worker (Cloudflare static assets).
+[assets]
+directory = "./public"
+binding = "ASSETS"
+run_worker_first = true
+
+# Heartbeat of the digital ecosystem: one cron every 2 minutes drives
+# tick_agent for every due agent and settles epochs (advance_epoch).
+[triggers]
+crons = ["*/2 * * * *"]
+
+[vars]
+# Public read-only RPC. Point at a private endpoint for production load.
+RPC_URL = "https://api.devnet.solana.com"
+# Placeholder program ID until `anchor build` regenerates it and it is deployed.
+PROGRAM_ID = "Fg6PaFpoGXkYsidMpWTK6W2BeZ7FEfcYkg476zPFsLnS"
+
+# Secrets (NEVER commit; set with `wrangler secret put`):
+#   VERIFIER_KEY  base58 of the verifier keypair used by the cron to sign
+#                 tick_agent / advance_epoch transactions.
+# Without VERIFIER_KEY the Worker still serves the read API and /health,
+# and the cron becomes a no-op (safe by default).
