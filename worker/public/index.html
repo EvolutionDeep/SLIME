@@ -1,60 +1,88 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>SLIME — Solana Interactive Evolution of Machine Life</title>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>SLIME — a living colony on Solana</title>
   <link rel="stylesheet" href="/style.css" />
+  <script type="importmap">
+    {
+      "imports": {
+        "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
+        "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"
+      }
+    }
+  </script>
 </head>
 <body>
-  <header>
-    <h1>SLIME <span class="sub">a sandboxed digital slime mold on Solana</span></h1>
+  <!-- 3D containment vessel fills the screen; HUD panels float above it. -->
+  <div id="scene"></div>
+
+  <div id="loading">
+    <div class="loader-ring"></div>
+    <p>incubating colony…</p>
+  </div>
+
+  <header class="hud top-left">
+    <h1>SLIME<span class="cursor">_</span></h1>
+    <p class="sub">Solana Interactive Evolution of Machine Life</p>
+    <div id="mode" class="badge">SANDBOX · digital twin</div>
   </header>
 
-  <div id="banner" class="banner hidden"></div>
+  <section class="hud top-right">
+    <div class="stat"><label>epoch</label><value id="st-epoch">0</value></div>
+    <div class="stat"><label>colony</label><value id="st-pop">1</value></div>
+    <div class="stat"><label>alive</label><value id="st-alive">1</value></div>
+    <div class="stat"><label>R₀ (EMA)</label><value id="st-r0">0.00</value></div>
+    <div class="stat"><label>max gen</label><value id="st-gen">0</value></div>
+    <div class="stat"><label>ever born</label><value id="st-total">1</value></div>
+  </section>
 
-  <main>
-    <section class="cards">
-      <div class="card"><label>Epoch</label><value id="c-epoch">–</value></div>
-      <div class="card"><label>Population</label><value id="c-pop">–</value></div>
-      <div class="card"><label>Alive</label><value id="c-alive">–</value></div>
-      <div class="card"><label>R0 (EMA ×1000)</label><value id="c-r0">–</value></div>
-      <div class="card"><label>Chronicle seq</label><value id="c-seq">–</value></div>
-      <div class="card"><label>Breaker</label><value id="c-breaker">–</value></div>
-    </section>
+  <section class="hud bottom-left">
+    <div class="controls">
+      <button id="btn-pause">⏸ pause</button>
+      <button id="btn-speed">×1</button>
+      <button id="btn-reset">⟲ new seed</button>
+      <button id="btn-rotate">◉ orbit</button>
+      <button id="btn-about">? the paper</button>
+    </div>
+    <div class="curve-wrap">
+      <canvas id="curve" width="300" height="120"></canvas>
+      <p class="curve-label">first-attempt success by generation</p>
+    </div>
+  </section>
 
-    <section>
-      <h2>Lineage learning curve</h2>
-      <p class="muted" id="simNote">
-        Simulation snapshot from docs/SIM_RESULTS.md (first-attempt success by
-        generation). Replaced by on-chain chronicle data once the program is live.
-      </p>
-      <canvas id="curve" width="900" height="260"></canvas>
-    </section>
+  <section class="hud bottom-right">
+    <h2 class="feed-title">chronicle feed</h2>
+    <ul id="feed"></ul>
+  </section>
 
-    <section class="grid2">
-      <div>
-        <h2>Fleet</h2>
-        <table id="agents">
-          <thead>
-            <tr><th>id</th><th>gen</th><th>cap</th><th>size KB</th><th>fitness</th><th>energy</th><th>status</th></tr>
-          </thead>
-          <tbody><tr class="empty"><td colspan="7">not connected yet</td></tr></tbody>
-        </table>
-      </div>
-      <div>
-        <h2>Recent chronicle events</h2>
-        <ul id="events" class="events"><li>not connected yet</li></ul>
-      </div>
-    </section>
-  </main>
+  <aside id="card" class="hud hidden"></aside>
 
-  <footer>
-    <p>Inspired by Anthropic Frontier Red Team, “AI models may be capable of
-    self-replicating without access to a datacenter” (2026-10-12). Simulation only —
-    no real network activity, no weights, no exploits.</p>
-  </footer>
+  <section id="about" class="hud paper-panel hidden">
+    <h2>From the paper to the petri dish</h2>
+    <p>Inspired by the Anthropic Frontier Red Team post
+      <i>“AI models may be capable of self-replicating without access to a
+      datacenter”</i> (2026-10-12). This colony replays the post's dynamics as
+      pure sandbox math:</p>
+    <ul>
+      <li><b>capability floor</b> — a child can only spawn if the inherited
+        genome covers the challenge difficulty;</li>
+      <li><b>size ceiling</b> — the genome must fit the host fleet
+        (15 TV boxes at 0.39 tok/s aggregate);</li>
+      <li><b>Lamarckian notes</b> — every agent inherits the parent's rewritten
+        notebook; familiarity with seen hardware raises first-attempt odds
+        (the post's 45% → 61–84% curve, dashed band on the chart);</li>
+      <li><b>R₀ under caps</b> — three-layer credit budgets keep the effective
+        reproduction rate below 1: the strain goes endemic, never epidemic;</li>
+      <li><b>quarantine</b> — a blue-team sweep cages random hosts once the
+        colony grows; caged agents burn energy and starve out.</li>
+    </ul>
+    <p class="muted">Simulation only — no real network activity, no model
+      weights, no exploits. Once the on-chain program is deployed, the feed
+      and colony switch to live chronicle data.</p>
+  </section>
 
-  <script src="/app.js"></script>
+  <script type="module" src="/js/app.js"></script>
 </body>
 </html>

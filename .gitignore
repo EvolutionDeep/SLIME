@@ -5,3 +5,8 @@ test-ledger/
 .wrangler/
 dist/
 *.log
+# Local secrets: RPC keys / deployer keys must never enter this public repo.
+.dev.vars
+.devnet.env
+.test-deployer-key.json
+.DS_Store
