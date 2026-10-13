@@ -947,8 +947,13 @@ export class ColonyScene {
   }
 
   /** Adaptive resolution: sample real frame rate every ~1.5s and step the
-   *  pixel ratio down under load / back up when the GPU catches its breath.
-   *  Visual identity is untouched — glow art hides the resolution change. */
+   *  pixel ratio down ONLY under real strain, back up as soon as it's
+   *  comfortable. Hard floor of 1.0 — a sub-native back-buffer is exactly what
+   *  read as "blurry at the default whole-colony view": the old 0.75 floor plus
+   *  a dead-band that only recovered above 57fps could get stuck soft, because
+   *  dropping resolution lifted fps into the 45–57 gap where it never climbed
+   *  back. Zooming in/out changed the on-screen overdraw enough to escape it,
+   *  which is why only the default distance looked fuzzy. */
   #adaptQuality(dt) {
     this._fpsAcc = (this._fpsAcc || 0) + dt;
     this._fpsN = (this._fpsN || 0) + 1;
@@ -956,8 +961,8 @@ export class ColonyScene {
     const fps = this._fpsN / this._fpsAcc;
     this._fpsAcc = 0; this._fpsN = 0;
     let next = this.dprCur;
-    if (fps < 45) next = Math.max(0.75, this.dprCur - 0.25);
-    else if (fps > 57) next = Math.min(this.dprBase, this.dprCur + 0.25);
+    if (fps < 38) next = Math.max(1, this.dprCur - 0.25);       // never below native
+    else if (fps > 50) next = Math.min(this.dprBase, this.dprCur + 0.25);
     if (next === this.dprCur) return;
     this.dprCur = next;
     this.renderer.setPixelRatio(next);
