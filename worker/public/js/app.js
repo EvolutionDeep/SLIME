@@ -55,7 +55,7 @@ scene.onSelect((id) => {
 // a <section data-p="..."> in index.html, nothing else.
 // ---------------------------------------------------------------------------
 
-const DRAWER_LABELS = { world: "WORLD", feed: "CHRONICLE", curve: "LEARNING CURVE", guardian: "GUARDIAN", chain: "KEEPER LEDGER", paper: "THE PAPER" };
+const DRAWER_LABELS = { world: "WORLD", curve: "LEARNING CURVE", guardian: "GUARDIAN", chain: "KEEPER LEDGER", paper: "THE PAPER" };
 const drawer = {
   el: $("drawer"), title: $("drawer-title"),
   buttons: [...document.querySelectorAll(".rail-btn[data-drawer]")],
@@ -78,7 +78,8 @@ const drawer = {
 for (const b of drawer.buttons) b.addEventListener("click", () => drawer.show(b.dataset.drawer));
 $("drawer-close").addEventListener("click", () => drawer.close());
 addEventListener("keydown", (e) => { if (e.key === "Escape") drawer.close(); });
-drawer.show("feed");   // the living chronicle is the default surface
+// No drawer opens on load: the colony is the landing screen, panels are
+// opt-in. (The chronicle lives permanently at the right edge, outside here.)
 
 const claim = setupClaim({ scene, getWorld: () => world, refresh: () => poll(), openDrawer: (k) => drawer.show(k) });
 

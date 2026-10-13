@@ -67,18 +67,9 @@ body {
   background: radial-gradient(ellipse at 50% 44%, transparent 58%, rgba(3, 6, 18, 0.5) 100%);
 }
 
-/* Instrument frame: quiet corner ticks, no glow. */
-.frame-marks { position: fixed; inset: 16px; z-index: 2; pointer-events: none; }
-.frame-marks i { position: absolute; width: 18px; height: 18px; opacity: 0.28; }
-.frame-marks i::before, .frame-marks i::after {
-  content: ""; position: absolute; background: var(--line-hot);
-}
-.frame-marks i::before { width: 22px; height: 1px; top: 0; }
-.frame-marks i::after { width: 1px; height: 22px; left: 0; }
-.frame-marks i:nth-child(1) { top: 0; left: 0; }
-.frame-marks i:nth-child(2) { top: 0; right: 0; transform: scaleX(-1); }
-.frame-marks i:nth-child(3) { bottom: 0; left: 0; transform: scaleY(-1); }
-.frame-marks i:nth-child(4) { bottom: 0; right: 0; transform: scale(-1); }
+/* The old corner "frame marks" were a sci-fi HUD cliché — the four bracket
+   ticks have been removed from the markup entirely; the veil carries the only
+   remaining edge treatment. */
 
 /* --------------------------------------------------------------------------
    HUD shell: solid ink panels, a single hairline, one corner-bracket motif
@@ -282,7 +273,7 @@ body {
 .drawer-head {
   display: flex; justify-content: space-between; align-items: center;
   padding: 12px 16px 10px;
-  font-size: 10px; font-weight: 600; letter-spacing: 3px; text-transform: uppercase;
+  font-size: 10px; font-weight: 600; letter-spacing: 2px; text-transform: uppercase;
   color: var(--ink);
   border-bottom: 1px solid var(--line);
 }
@@ -298,10 +289,6 @@ body {
 /* One drawer, many surfaces: each .dp is a plug-in panel (see app.js). */
 .dp { padding: 14px 16px 18px; flex: 1; min-height: 0; }
 .dp.hidden { display: none; }
-/* Chronicle tab owns its scroll: head row fixed, log flexes inside. */
-.dp[data-p="feed"] { display: flex; flex-direction: column; padding-bottom: 10px; }
-.dp[data-p="feed"].hidden { display: none; }
-.dp[data-p="feed"] #feed { flex: 1; min-height: 0; }
 .dp p { font-size: 11.5px; line-height: 1.75; color: var(--ink); padding: 12px 0 0; }
 .dp i { color: var(--cyan); font-style: normal; }
 .dp ul:not(#feed) { list-style: none; padding: 10px 0 0; display: grid; gap: 9px; }
@@ -327,12 +314,26 @@ body {
 #season-bar { display: block; height: 100%; width: 0%; background: linear-gradient(90deg, var(--cyan), var(--gold)); transition: width 0.9s linear; }
 #season-cd { font-size: 10px; font-weight: 600; letter-spacing: 1px; color: var(--gold); font-variant-numeric: tabular-nums; }
 
-/* Chronicle tab: live badge above the scrolling log. */
-.feed-live {
-  display: flex; align-items: center; gap: 10px; padding: 0 2px 8px;
-  font-size: 8.5px; letter-spacing: 2px; text-transform: uppercase; color: var(--faint);
+/* Chronicle: a permanent right-edge live-log column, outside the drawer.
+   Solid ink, one hairline header, no blinking "REC" badge. */
+.chronicle {
+  position: fixed; z-index: 6; right: 24px; bottom: 24px;
+  width: 320px; max-height: 38vh;
+  display: flex; flex-direction: column;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow);
+}
+.chronicle-head {
+  display: flex; justify-content: space-between; align-items: baseline;
+  padding: 10px 14px 9px; flex: none;
+  font-size: 9px; letter-spacing: 2px; text-transform: uppercase; color: var(--dim);
   border-bottom: 1px solid var(--line);
 }
+.chronicle-head span { color: var(--ink); }
+.chronicle-head em { font-style: normal; color: var(--faint); letter-spacing: 1.4px; }
+.chronicle #feed { flex: 1; min-height: 0; }
 
 /* Learning-curve chart inside the curve tab. */
 .dp canvas { display: block; width: 100%; margin-top: 10px; }
@@ -366,42 +367,43 @@ body {
   white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
 }
 #feed li:hover { border-left-color: var(--line-hot); background: rgba(102, 184, 224, 0.04); }
-@keyframes logIn { from { opacity: 0; transform: translateX(10px); } }
+@keyframes logIn { from { opacity: 0; } }
 
 #feed .dot { width: 6px; height: 6px; border-radius: 50%; flex: none; transform: translateY(-1px); }
 #feed .meta { color: var(--faint); font-size: 10px; min-width: 26px; }
 #feed .tag {
-  font-size: 8.5px; font-weight: 600; letter-spacing: 1.6px; text-transform: uppercase;
-  padding: 1px 5px 0.5px; flex: none;
+  font-size: 9px; font-weight: 500; letter-spacing: 0.6px; text-transform: uppercase;
+  padding: 0; flex: none; opacity: 0.85;
 }
 #feed .txt { color: var(--ink); overflow: hidden; text-overflow: ellipsis; }
 #feed .dim { color: var(--dim); font-size: 10px; }
 
+/* Colour lives ONLY in the small leading dot; the word tags stay quiet. The
+   old bordered neon chips were a dashboard cliché — a log reads, it doesn't
+   shout. Quarantine no longer paints a red bar down the whole row. */
 .ev-birth .dot { background: var(--neon); }
-.ev-birth .tag { color: var(--neon); border: 1px solid var(--line); }
+.ev-birth .tag { color: var(--neon); }
 .ev-hatch .dot { background: var(--violet); }
-.ev-hatch .tag { color: var(--violet); border: 1px solid var(--line); }
+.ev-hatch .tag { color: var(--violet); }
 .ev-death .dot { background: var(--red); }
-.ev-death .tag { color: var(--red); border: 1px solid var(--line); }
-.ev-death .txt { color: #b9a4ad; }
+.ev-death .tag { color: var(--red); }
 .ev-quarantine .dot { background: var(--alarm); }
-.ev-quarantine .tag { color: var(--alarm); border: 1px solid var(--line); background: rgba(239, 75, 96, 0.06); }
-.ev-quarantine { border-left-color: rgba(239, 75, 96, 0.5); }
+.ev-quarantine .tag { color: var(--alarm); }
 .ev-cap .dot { background: var(--dim); }
-.ev-cap .tag { color: var(--dim); border: 1px solid rgba(122, 138, 178, 0.35); }
+.ev-cap .tag { color: var(--dim); }
 .ev-tick .dot { background: var(--faint); }
-.ev-tick .tag { color: var(--faint); border: 1px solid rgba(51, 73, 74, 0.5); }
+.ev-tick .tag { color: var(--faint); }
 
 /* --------------------------------------------------------------------------
    Specimen report card (agent hover)
    -------------------------------------------------------------------------- */
 
 .report {
-  right: 28px; top: 50%; transform: translateY(-50%);
-  width: 264px; padding: 0 0 10px;
+  right: 24px; top: 128px; z-index: 9;
+  width: 320px; padding: 0 0 10px;
   animation: cardIn 0.28s cubic-bezier(0.22, 1, 0.36, 1);
 }
-@keyframes cardIn { from { opacity: 0; transform: translateY(-46%) translateX(-10px); } }
+@keyframes cardIn { from { opacity: 0; transform: translateY(-8px); } }
 
 .rp-bar { height: 2px; background: var(--c, var(--cyan)); }
 .rp-head {
@@ -572,7 +574,8 @@ body {
 
 @media (max-width: 1280px) {
   :root { --drawer-w: 340px; }
-  .report { right: 20px; width: 244px; }
+  .report { width: 300px; }
+  .chronicle { width: 300px; }
 }
 @media (max-width: 900px) {
   .brand { top: 20px; left: 22px; }
@@ -580,6 +583,7 @@ body {
   :root { --drawer-w: min(360px, calc(100vw - var(--rail-w) - 48px)); }
   .drawer { top: 128px; bottom: 118px; }
   .report { display: none; }          /* touch/small windows: tap-to-focus only */
+  .chronicle { width: 232px; max-height: 30vh; right: 16px; bottom: 16px; }
   .hero-wrap { width: calc(100vw - var(--rail-w) - 48px); }
   .markers .slime-marker:nth-child(n+6) { display: none; }
 }

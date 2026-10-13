@@ -22,9 +22,6 @@
        above it. Panels never crowd the viewport: only one drawer is open. -->
   <div id="scene"></div>
 
-  <div class="frame-marks" aria-hidden="true">
-    <i></i><i></i><i></i><i></i>
-  </div>
   <div class="veil" aria-hidden="true"></div>
 
   <div id="loading">
@@ -42,7 +39,6 @@
   <!-- Tool rail: every surface is one click away, nothing overlaps. -->
   <nav class="rail" id="rail" aria-label="dashboard sections">
     <button class="rail-btn" data-drawer="world"><i>⬡</i><span>world</span></button>
-    <button class="rail-btn" data-drawer="feed"><i>≡</i><span>chronicle</span></button>
     <button class="rail-btn" data-drawer="curve"><i>∿</i><span>learning</span></button>
     <button class="rail-btn" data-drawer="guardian">
       <i>⚔</i><span>guardian</span><em id="guard-count" class="rail-badge hidden">0</em>
@@ -82,11 +78,6 @@
         </div>
         <p class="dp-note">one world, one clock — every visitor watches the same
           colony at the same epoch.</p>
-      </section>
-
-      <section data-p="feed" class="dp hidden">
-        <div class="feed-live"><span class="rec"><i></i>rec</span><span>the world's live log</span></div>
-        <ul id="feed"></ul>
       </section>
 
       <section data-p="curve" class="dp hidden">
@@ -143,6 +134,15 @@
       </section>
 
     </div>
+  </aside>
+
+  <!-- Chronicle: the world's live log, now a permanent fixture at the right
+       edge instead of a drawer tab. Pulled out so the first impression is the
+       colony itself, not a stack of panels. No blinking "REC" — an instrument
+       reads a log, it doesn't perform one. -->
+  <aside id="chronicle" class="chronicle">
+    <div class="chronicle-head"><span>chronicle</span><em>live log</em></div>
+    <ul id="feed"></ul>
   </aside>
 
   <!-- Hero invitation: the one loud element for wallet-less visitors. -->
