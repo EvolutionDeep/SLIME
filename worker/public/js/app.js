@@ -30,7 +30,18 @@ let since = -1;          // chronicle cursor
 let seenHeads = new Set();
 
 const scene = new ColonyScene(ui.scene);
-scene.onHover((id) => showCard(id));
+// Hover cards must be REACHABLE: leaving the cell starts a grace timer
+// instead of hiding instantly, and hovering the card itself pins it open.
+// Without this the CLAIM/FEED/PIT buttons are impossible to click.
+let cardHideTimer = null;
+const cancelCardHide = () => { if (cardHideTimer) { clearTimeout(cardHideTimer); cardHideTimer = null; } };
+const scheduleCardHide = (ms) => {
+  cancelCardHide();
+  cardHideTimer = setTimeout(() => ui.card.classList.add("hidden"), ms);
+};
+scene.onHover((id) => { if (id == null) scheduleCardHide(500); else { cancelCardHide(); showCard(id); } });
+ui.card.addEventListener("mouseenter", cancelCardHide);
+ui.card.addEventListener("mouseleave", () => scheduleCardHide(350));
 scene.onSelect((id) => { if (id != null) scene.focus(id, colonyView); });
 
 const claim = setupClaim({ scene, getWorld: () => world, refresh: () => poll() });

@@ -204,12 +204,21 @@ export class ColonyScene {
     this.selectCb = null;
     this.selected = null;
     this.time = 0;
+    this.frame = 0;
     this.chainPts = [];
     this.fitRadius = 0;           // colony spread the camera keeps framed
     this.lastUserZoom = -99;
+    // Renderer-side perf kit: shared scratch objects + O(1) hover lookup.
+    this.coreIds = new Map();     // core mesh -> agent id
+    this._q = new THREE.Quaternion();
+    this._swayAxis = new THREE.Vector3();
 
-    const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: false });
-    renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+    const renderer = new THREE.WebGLRenderer({ antialias: false, alpha: false });
+    // Composer rendering ignores MSAA anyway; 1.5x pixels are indistinguishable
+    // at this art style (glow + fog hide aliasing) and halve the fill-rate cost.
+    this.dprBase = Math.min(window.devicePixelRatio, 1.5);
+    this.dprCur = this.dprBase;
+    renderer.setPixelRatio(this.dprCur);
     renderer.setSize(container.clientWidth, container.clientHeight);
     renderer.toneMapping = THREE.ACESFilmicToneMapping;
     renderer.toneMappingExposure = 0.8;
@@ -325,8 +334,10 @@ export class ColonyScene {
     scene.add(this.reticle);
 
     this.glowTex = glowTexture();
-    // Shared geometries: icosphere level 3 deforms smoothly at cell scale.
+    // Shared geometries, two LOD tiers: close cells keep the buttery detail-3
+    // writhe; far ones swap to detail-2 (1/4 tris) — invisible at that size.
     this.blobGeo = new THREE.IcosahedronGeometry(1, 3);
+    this.blobGeoLow = new THREE.IcosahedronGeometry(1, 2);
     this.nucleusGeo = new THREE.SphereGeometry(1, 12, 10);
     this.organelleGeo = new THREE.SphereGeometry(1, 6, 5);
     this.podGeo = new THREE.ConeGeometry(0.14, 1.1, 6, 1, true);
@@ -410,6 +421,7 @@ export class ColonyScene {
       if (v.crown) v.crown.material.dispose();
     }
     this.visuals.clear();
+    this.coreIds.clear();
     this.posMap.clear();
     this.chainLine.visible = false;
     this.reticle.visible = false;
@@ -540,6 +552,7 @@ export class ColonyScene {
       0.78 + r() * 0.55, 0.78 + r() * 0.55, 0.78 + r() * 0.55,
     );
     const core = new THREE.Mesh(this.blobGeo, cellMaterial(col, seed, 0.34, freq, stretch));
+    this.coreIds.set(core, a.id);
 
     const skinMat = new THREE.MeshBasicMaterial({
       color: col.clone().lerp(new THREE.Color("#ffffff"), 0.25),
@@ -581,6 +594,10 @@ export class ColonyScene {
       m.userData.baseQ = baseQ;
       m.userData.phase = r() * Math.PI * 2;
       m.userData.len = 0.8 + r() * 0.9;
+      // Sway axis precomputed — per-frame allocation here was GC poison.
+      m.userData.axis = new THREE.Vector3(
+        Math.sin(m.userData.phase), Math.cos(m.userData.phase * 1.3), Math.sin(m.userData.phase * 0.7),
+      ).normalize();
       pods.push(m);
     }
 
@@ -601,13 +618,18 @@ export class ColonyScene {
     return v;
   }
 
-  /** Per-frame cytoplasmic motion: organelle orbits + pseudopod quiver. */
+  /** Per-frame cytoplasmic motion: organelle orbits + pseudopod quiver.
+   *  Cells animate on alternating frames (double dt) — the motion is slow
+   *  enough that half-rate updates are invisible, and far cells skip entirely. */
   #stepCells(dt) {
+    const parity = this.frame & 1;
+    let i = 0;
     for (const v of this.visuals.values()) {
-      if (v.dying) continue;
+      if (v.dying || v.isFar) { i++; continue; }
+      if ((i++ & 1) !== parity) continue;
       const t = this.time;
       for (const o of v.organelles) {
-        o.ang += dt * o.spd;
+        o.ang += dt * 2 * o.spd;
         o.mesh.position.set(
           Math.cos(o.ang) * o.u.x * o.rad + Math.sin(o.ang) * o.v.x * o.rad,
           Math.cos(o.ang) * o.u.y * o.rad + Math.sin(o.ang) * o.v.y * o.rad,
@@ -619,13 +641,27 @@ export class ColonyScene {
         const q = 0.6 + 0.4 * Math.sin(t * 1.9 + d.phase);   // extend/retract
         p.scale.set(1, q * d.len, 1);
         p.position.copy(d.dir).multiplyScalar(0.55 + q * 0.35);
-        // Sway around the resting direction (rebuilt from base each frame).
-        const sway = new THREE.Quaternion().setFromAxisAngle(
-          new THREE.Vector3(Math.sin(d.phase), Math.cos(d.phase * 1.3), Math.sin(d.phase * 0.7)).normalize(),
-          0.12 * Math.sin(t * 1.3 + d.phase),
-        );
-        p.quaternion.copy(d.baseQ).premultiply(sway);
+        // Sway around the resting direction — scratch quaternion, zero alloc.
+        this._q.setFromAxisAngle(d.axis, 0.12 * Math.sin(t * 1.3 + d.phase));
+        p.quaternion.copy(d.baseQ).premultiply(this._q);
       }
+    }
+  }
+
+  /** Distance LOD: near cells render at full fidelity; far ones drop to the
+   *  low-poly silhouette and shed sub-pixel innards (organelles ~0.1u, pods).
+   *  Biggest draw-call + vertex-cost saver at 300+ populations. */
+  #stepLod() {
+    const cam = this.camera.position;
+    for (const v of this.visuals.values()) {
+      if (v.dying) continue;
+      const far = v.group.position.distanceTo(cam) > 130;
+      if (far === v.isFar) continue;
+      v.isFar = far;
+      v.core.geometry = far ? this.blobGeoLow : this.blobGeo;
+      v.nucleus.visible = !far;
+      for (const o of v.organelles) o.mesh.visible = !far;
+      for (const p of v.pods) p.visible = !far;
     }
   }
 
@@ -774,6 +810,7 @@ export class ColonyScene {
         if (v.fade <= 0) {
           this.scene.remove(v.group);
           v.core.material.dispose(); v.skinMat.dispose(); v.orgMat.dispose(); v.halo.material.dispose();
+          this.coreIds.delete(v.core);
           this.visuals.delete(id);
           this.posMap.delete(id);
         }
@@ -811,10 +848,7 @@ export class ColonyScene {
     this.raycaster.setFromCamera(this.pointer, this.camera);
     const cores = [...this.visuals.values()].filter((v) => !v.dying).map((v) => v.core);
     const hit = this.raycaster.intersectObjects(cores, false)[0];
-    let id;
-    if (hit) {
-      for (const [aid, v] of this.visuals) if (v.core === hit.object) { id = aid; break; }
-    }
+    const id = hit ? this.coreIds.get(hit.object) : undefined;
     if (id !== this.hovered) {
       this.hovered = id;
       if (this.hoverCb) this.hoverCb(id ?? null);
@@ -837,18 +871,42 @@ export class ColonyScene {
     this.composer.setSize(w, h);
   }
 
+  /** Adaptive resolution: sample real frame rate every ~1.5s and step the
+   *  pixel ratio down under load / back up when the GPU catches its breath.
+   *  Visual identity is untouched — glow art hides the resolution change. */
+  #adaptQuality(dt) {
+    this._fpsAcc = (this._fpsAcc || 0) + dt;
+    this._fpsN = (this._fpsN || 0) + 1;
+    if (this._fpsAcc < 1.5) return;
+    const fps = this._fpsN / this._fpsAcc;
+    this._fpsAcc = 0; this._fpsN = 0;
+    let next = this.dprCur;
+    if (fps < 45) next = Math.max(0.75, this.dprCur - 0.25);
+    else if (fps > 57) next = Math.min(this.dprBase, this.dprCur + 0.25);
+    if (next === this.dprCur) return;
+    this.dprCur = next;
+    this.renderer.setPixelRatio(next);
+    if (this.composer.setPixelRatio) this.composer.setPixelRatio(next);
+    this.#resize();
+  }
+
   #startLoop() {
     const clock = new THREE.Clock();
     const loop = () => {
       requestAnimationFrame(loop);
+      this.frame++;
       const dt = Math.min(0.05, clock.getDelta());
       this.time += dt;
       for (const v of this.visuals.values()) {
         v.core.material.uniforms.uTime.value = this.time;
       }
+      this.#stepLod();
       this.#stepCells(dt);
-      this.#driftSpores(this.spores, this.time);
-      this.#driftSpores(this.motes, this.time * 0.6);
+      // Spore dust drifts slowly — a quarter-rate update still reads as fluid.
+      if ((this.frame & 3) === 0) {
+        this.#driftSpores(this.spores, this.time);
+        this.#driftSpores(this.motes, this.time * 0.6);
+      }
       this.rim.material.opacity = 0.1 + 0.05 * Math.sin(this.time * 0.7);
       this.#stepBursts(dt);
       this.#stepFades(dt);
@@ -856,7 +914,10 @@ export class ColonyScene {
       this.#tween(dt);
       this.#measureSpread();
       this.#autoFit(dt);
-      this.#pick();
+      this.#adaptQuality(dt);
+      // Hover raycast at half rate — pointer response stays imperceptibly fast,
+      // but 320-mesh intersection no longer runs every single frame.
+      if ((this.frame & 1) === 0) this.#pick();
       this.controls.update();
       this.composer.render();
     };
