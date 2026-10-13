@@ -21,11 +21,11 @@ import { UnrealBloomPass } from "three/addons/postprocessing/UnrealBloomPass.js"
 const STATUS = { Egg: "Egg", Alive: "Alive", Quarantined: "Quarantined", Dead: "Dead" };
 
 const COLOR = {
-  aliveLow: new THREE.Color("#2dd4a7"),
-  aliveHigh: new THREE.Color("#7df9ff"),
+  aliveLow: new THREE.Color("#3fe0c0"),
+  aliveHigh: new THREE.Color("#6fd7ff"),
   egg: new THREE.Color("#b58cff"),
   quarantined: new THREE.Color("#ff5470"),
-  dead: new THREE.Color("#37413f"),
+  dead: new THREE.Color("#55628a"),
 };
 
 function agentColor(a) {
@@ -65,9 +65,9 @@ function bgTexture() {
   c.width = c.height = 512;
   const g = c.getContext("2d");
   const grad = g.createRadialGradient(256, 300, 0, 256, 256, 420);
-  grad.addColorStop(0, "#061a1e");
-  grad.addColorStop(0.45, "#030e14");
-  grad.addColorStop(1, "#01040a");
+  grad.addColorStop(0, "#16214f");
+  grad.addColorStop(0.45, "#0c1438");
+  grad.addColorStop(1, "#070d26");
   g.fillStyle = grad;
   g.fillRect(0, 0, 512, 512);
   return new THREE.CanvasTexture(c);
@@ -218,7 +218,7 @@ export class ColonyScene {
 
     const scene = new THREE.Scene();
     scene.background = bgTexture();
-    scene.fog = new THREE.FogExp2(0x02090f, 0.0022);
+    scene.fog = new THREE.FogExp2(0x0a1230, 0.0022);
     this.scene = scene;
 
     const camera = new THREE.PerspectiveCamera(
@@ -249,13 +249,13 @@ export class ColonyScene {
     composer.addPass(this.bloom);
     this.composer = composer;
 
-    scene.add(new THREE.AmbientLight(0x223344, 1.2));
-    const p1 = new THREE.PointLight(0x35ffc3, 1.0, 700); p1.position.set(120, 160, 120);
+    scene.add(new THREE.AmbientLight(0x2c3c66, 1.25));
+    const p1 = new THREE.PointLight(0x59b8ff, 1.05, 700); p1.position.set(120, 160, 120);
     const p2 = new THREE.PointLight(0x7a5cff, 0.6, 700); p2.position.set(-150, -70, -110);
     scene.add(p1, p2);
 
     // --- The dish: bigger world so cells never crowd each other.
-    const grid = new THREE.PolarGridHelper(260, 14, 6, 96, 0x1d5c4c, 0x0d2b26);
+    const grid = new THREE.PolarGridHelper(260, 14, 6, 96, 0x31539b, 0x1a2a55);
     grid.material.transparent = true;
     grid.material.opacity = 0.15;
     grid.material.depthWrite = false;
@@ -264,7 +264,7 @@ export class ColonyScene {
     const rim = new THREE.Mesh(
       new THREE.TorusGeometry(260, 0.7, 8, 200),
       new THREE.MeshBasicMaterial({
-        color: 0x2bd9a8, transparent: true, opacity: 0.14, blending: THREE.AdditiveBlending,
+        color: 0x63b5ff, transparent: true, opacity: 0.14, blending: THREE.AdditiveBlending,
       }),
     );
     rim.rotation.x = Math.PI / 2;
@@ -275,14 +275,14 @@ export class ColonyScene {
     const shell = new THREE.Mesh(
       new THREE.IcosahedronGeometry(275, 2),
       new THREE.MeshBasicMaterial({
-        color: 0x2b6b5a, wireframe: true, transparent: true, opacity: 0.04,
+        color: 0x3d4f96, wireframe: true, transparent: true, opacity: 0.04,
       }),
     );
     scene.add(shell);
 
     // Spore dust: near drifters + far motes, slow parallax life.
-    this.spores = this.#makeSpores(360, 230, 0.5, 0x54c9ab);
-    this.motes = this.#makeSpores(800, 560, 0.32, 0x274f47);
+    this.spores = this.#makeSpores(360, 230, 0.5, 0x7fc8ff);
+    this.motes = this.#makeSpores(800, 560, 0.32, 0x39518f);
 
     // Protoplasmic lineage filaments.
     this.maxEdges = 600;
@@ -315,7 +315,7 @@ export class ColonyScene {
     // Selection reticle.
     this.reticle = new THREE.Group();
     const reticleMat = new THREE.MeshBasicMaterial({
-      color: 0x7df9ff, transparent: true, opacity: 0.8, side: THREE.DoubleSide,
+      color: 0x6fd7ff, transparent: true, opacity: 0.8, side: THREE.DoubleSide,
       blending: THREE.AdditiveBlending, depthWrite: false,
     });
     const r1 = new THREE.Mesh(new THREE.RingGeometry(1.5, 1.58, 48), reticleMat);
@@ -449,7 +449,7 @@ export class ColonyScene {
     for (const ev of events) {
       const a = ev.agent != null ? colony.agents.get(ev.agent) : null;
       const pos = a ? this.#position(a.id, a) : null;
-      if (ev.type === "birth" && pos) this.#burst(pos, 0x35ffc3, 18, 1.6);
+      if (ev.type === "birth" && pos) this.#burst(pos, 0x4be3b0, 18, 1.6);
       else if (ev.type === "hatch" && pos) this.#burst(pos, 0xb58cff, 12, 1.2);
       else if (ev.type === "death" && pos) this.#burst(pos, 0xff5470, 14, 1.3);
       else if (ev.type === "quarantine" && pos) this.#burst(pos, 0xff2244, 30, 2.2);

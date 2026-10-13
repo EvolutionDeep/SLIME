@@ -139,7 +139,7 @@ function showCard(id) {
   if (id == null || !colonyView) { ui.card.classList.add("hidden"); return; }
   const a = colonyView.agents.get(id);
   if (!a) { ui.card.classList.add("hidden"); return; }
-  const statusColor = { Alive: "#35ffc3", Egg: "#b58cff", Quarantined: "#ff5470", Dead: "#8b98a5" }[a.status];
+  const statusColor = { Alive: "#4be3b0", Egg: "#b58cff", Quarantined: "#ff5470", Dead: "#94a3c4" }[a.status];
   const cell = (label, value) =>
     `<div class="rp-cell"><label>${label}</label><value>${value}</value></div>`;
   const ePct = Math.max(0, Math.min(100, (a.energy / 200) * 100));
@@ -174,7 +174,7 @@ function renderCurve(w) {
   const g = c.getContext("2d");
   const W = c.width, H = c.height;
   g.clearRect(0, 0, W, H);
-  g.strokeStyle = "rgba(53,255,195,0.07)";
+  g.strokeStyle = "rgba(111,215,255,0.08)";
   g.lineWidth = 1;
   for (const r of [0.25, 0.5, 0.75]) {
     g.beginPath(); g.moveTo(26, H - 18 - (H - 30) * r); g.lineTo(W - 8, H - 18 - (H - 30) * r); g.stroke();
@@ -184,14 +184,14 @@ function renderCurve(w) {
   if (!gens.length) return;
   const x = (i) => 26 + (W - 36) * (gens.length === 1 ? 0.5 : i / (gens.length - 1));
   const y = (r) => H - 18 - (H - 30) * r;
-  g.fillStyle = "rgba(53,255,195,0.05)";
+  g.fillStyle = "rgba(111,215,255,0.06)";
   g.fillRect(20, y(0.84), W - 28, y(0.45) - y(0.84));
-  g.strokeStyle = "rgba(53,255,195,0.22)";
+  g.strokeStyle = "rgba(111,215,255,0.25)";
   g.setLineDash([4, 4]);
   g.beginPath(); g.moveTo(20, y(0.45)); g.lineTo(W - 8, y(0.45));
   g.moveTo(20, y(0.84)); g.lineTo(W - 8, y(0.84)); g.stroke();
   g.setLineDash([]);
-  g.strokeStyle = "rgba(125,249,255,0.25)"; g.lineWidth = 5;
+  g.strokeStyle = "rgba(181,140,255,0.30)"; g.lineWidth = 5;
   g.beginPath();
   gens.forEach((gen, i) => {
     const f = ft.get(gen);
@@ -199,18 +199,18 @@ function renderCurve(w) {
     i === 0 ? g.moveTo(x(i), y(r)) : g.lineTo(x(i), y(r));
   });
   g.stroke();
-  g.strokeStyle = "#7df9ff"; g.lineWidth = 1.5;
+  g.strokeStyle = "#6fd7ff"; g.lineWidth = 1.5;
   g.stroke();
-  g.fillStyle = "#aef7ff";
+  g.fillStyle = "#bfe4ff";
   gens.forEach((gen, i) => {
     const f = ft.get(gen);
     const r = f.total ? f.wins / f.total : 0;
     g.beginPath(); g.arc(x(i), y(r), 2.4, 0, 7); g.fill();
-    g.fillStyle = "#4d6a68"; g.font = "8.5px 'JetBrains Mono', monospace";
+    g.fillStyle = "#7488b5"; g.font = "8.5px 'JetBrains Mono', monospace";
     g.fillText("g" + gen, x(i) - 6, H - 5);
-    g.fillStyle = "#aef7ff";
+    g.fillStyle = "#bfe4ff";
   });
-  g.fillStyle = "#4d6a68"; g.font = "8.5px 'JetBrains Mono', monospace";
+  g.fillStyle = "#7488b5"; g.font = "8.5px 'JetBrains Mono', monospace";
   g.fillText("PAPER 45–84%", W - 84, 12);
   g.fillText("0%", 4, H - 14);
   g.fillText("100%", 2, 24);
