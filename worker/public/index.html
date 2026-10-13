@@ -4,6 +4,9 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>SLIME — a living colony on Solana</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Unbounded:wght@400;600;800&family=JetBrains+Mono:wght@300;400;600;800&display=swap" rel="stylesheet" />
   <link rel="stylesheet" href="/style.css" />
   <script type="importmap">
     {
@@ -18,24 +21,46 @@
   <!-- 3D containment vessel fills the screen; HUD panels float above it. -->
   <div id="scene"></div>
 
+  <!-- Instrument-frame corner brackets + scanline veil (pure decoration). -->
+  <div class="frame-marks" aria-hidden="true">
+    <i></i><i></i><i></i><i></i>
+  </div>
+  <div class="veil" aria-hidden="true"></div>
+
   <div id="loading">
     <div class="loader-ring"></div>
     <p>incubating colony…</p>
   </div>
 
   <header class="hud top-left">
+    <div class="plate">
+      <span class="plate-no">SPECIMEN&nbsp;001</span>
+      <span class="plate-dim">/ PETRI-ARRAY · SOLANA</span>
+    </div>
     <h1>SLIME<span class="cursor">_</span></h1>
-    <p class="sub">Solana Interactive Evolution of Machine Life</p>
+    <p class="sub">Interactive Evolution of Machine Life</p>
     <div id="mode" class="badge">SANDBOX · digital twin</div>
   </header>
 
-  <section class="hud top-right">
-    <div class="stat"><label>epoch</label><value id="st-epoch">0</value></div>
-    <div class="stat"><label>colony</label><value id="st-pop">1</value></div>
-    <div class="stat"><label>alive</label><value id="st-alive">1</value></div>
-    <div class="stat"><label>R₀ (EMA)</label><value id="st-r0">0.00</value></div>
-    <div class="stat"><label>max gen</label><value id="st-gen">0</value></div>
-    <div class="stat"><label>ever born</label><value id="st-total">1</value></div>
+  <section class="hud top-right telemetry">
+    <div class="panel-head">
+      <span>colony telemetry</span>
+      <span class="rec"><i></i>obs</span>
+    </div>
+    <div class="gauges">
+      <div class="stat"><label>epoch</label><value id="st-epoch">0</value></div>
+      <div class="stat"><label>colony</label><value id="st-pop">1</value></div>
+      <div class="stat"><label>alive</label><value id="st-alive">1</value></div>
+      <div class="stat"><label>max gen</label><value id="st-gen">0</value></div>
+      <div class="stat"><label>ever born</label><value id="st-total">1</value></div>
+      <div class="stat r0">
+        <label>R₀ · EMA</label><value id="st-r0">0.00</value>
+        <div class="gauge" title="extinct &lt; 1 &lt; epidemic">
+          <div id="g-r0" class="gauge-fill"></div>
+          <div class="gauge-mark"></div>
+        </div>
+      </div>
+    </div>
   </section>
 
   <section class="hud bottom-left">
@@ -44,24 +69,27 @@
       <button id="btn-speed">×1</button>
       <button id="btn-reset">⟲ new seed</button>
       <button id="btn-rotate">◉ orbit</button>
-      <button id="btn-keeper">🜛 my slimes</button>
+      <button id="btn-keeper">✦ my slimes</button>
       <button id="btn-about">? the paper</button>
     </div>
     <div class="curve-wrap">
+      <div class="panel-head"><span>learning curve</span><span class="plate-dim">first-try %</span></div>
       <canvas id="curve" width="300" height="120"></canvas>
-      <p class="curve-label">first-attempt success by generation</p>
     </div>
   </section>
 
   <section class="hud bottom-right">
-    <h2 class="feed-title">chronicle feed</h2>
+    <div class="panel-head feed-head">
+      <span>chronicle feed</span>
+      <span class="rec"><i></i>rec</span>
+    </div>
     <ul id="feed"></ul>
   </section>
 
-  <aside id="card" class="hud hidden"></aside>
+  <aside id="card" class="hud report hidden"></aside>
 
   <aside id="keeper" class="hud keeper-panel hidden">
-    <h2>keeper cockpit</h2>
+    <div class="panel-head"><span>keeper cockpit</span><span class="plate-dim">holder ledger</span></div>
     <p class="muted">every token has a job: feed a slime, burn for a miracle,
       bet the colony's R₀, name a generation. paste a wallet to open its ledger.</p>
     <div class="keeper-connect">
@@ -76,7 +104,7 @@
   </aside>
 
   <section id="about" class="hud paper-panel hidden">
-    <h2>From the paper to the petri dish</h2>
+    <div class="panel-head"><span>from the paper to the petri dish</span><span class="plate-dim">anthropic · frontier red team</span></div>
     <p>Inspired by the Anthropic Frontier Red Team post
       <i>“AI models may be capable of self-replicating without access to a
       datacenter”</i> (2026-10-12). This colony replays the post's dynamics as
