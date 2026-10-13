@@ -32,8 +32,14 @@ const COLOR = {
 // so sibling lineages land on maximally distinct colors and the colony reads
 // as a mosaic of tribes instead of one monochrome blob.
 const GOLDEN = 0.61803398875;
+// Raw golden-ratio spacing (maximally distinct) folded into a COHESIVE cool
+// band — teal→cyan→blue→violet→magenta→rose — instead of the full 360° wheel.
+// A uniform rainbow was the single biggest "AI candy" tell; a curated band keeps
+// families distinguishable yet reads as one cinematic field, and stays clear of
+// green/amber/red so quarantine-red and guardian-gold keep their meaning.
 function founderHue(id) {
-  return (id * GOLDEN) % 1;
+  const t = (id * GOLDEN) % 1;
+  return 0.44 + t * 0.46;   // [0.44, 0.90)
 }
 
 // Deterministic per-agent jitter so layout never flickers between frames.
@@ -168,9 +174,9 @@ void main() {
   // Membrane grain from the displacement field: mottled, veined surface.
   float grain = 0.5 + 0.5 * sin(vN * 11.0) * (0.6 + 0.4 * vN);
   float veins = smoothstep(0.35, 0.85, abs(vN));
-  vec3 body = uColor * (0.12 + 0.16 * grain + 0.08 * veins);
-  vec3 glow = uColor * (0.85 + 0.65 * uEnergy) * fres;
-  gl_FragColor = vec4(body + glow, 0.45 + fres * 0.5);
+  vec3 body = uColor * (0.10 + 0.14 * grain + 0.07 * veins);
+  vec3 glow = uColor * (0.48 + 0.42 * uEnergy) * fres;
+  gl_FragColor = vec4(body + glow, 0.5 + fres * 0.42);
 }
 `;
 
@@ -216,10 +222,12 @@ export class ColonyScene {
     this._q = new THREE.Quaternion();
     this._swayAxis = new THREE.Vector3();
 
-    const renderer = new THREE.WebGLRenderer({ antialias: false, alpha: false });
-    // Composer rendering ignores MSAA anyway; 1.5x pixels are indistinguishable
-    // at this art style (glow + fog hide aliasing) and halve the fill-rate cost.
-    this.dprBase = Math.min(window.devicePixelRatio, 1.5);
+    const renderer = new THREE.WebGLRenderer({ antialias: false, alpha: false, powerPreference: "high-performance" });
+    // MSAA now happens INSIDE the composer (see the samples:4 target below),
+    // so the canvas itself doesn't need antialias — that keeps the geometry
+    // edges crisp without paying for supersampling. DPR cap 1.75 balances
+    // sharpness against fill-rate; adaptive quality still trims it under load.
+    this.dprBase = Math.min(window.devicePixelRatio || 1, 1.75);
     this.dprCur = this.dprBase;
     renderer.setPixelRatio(this.dprCur);
     renderer.setSize(container.clientWidth, container.clientHeight);
@@ -250,13 +258,20 @@ export class ColonyScene {
     // Respect manual zooming: auto-fit pauses after the user touches it.
     renderer.domElement.addEventListener("wheel", () => { this.lastUserZoom = this.time; }, { passive: true });
 
-    const composer = new EffectComposer(renderer);
+    // A multisampled HalfFloat target is what actually kills the jaggies:
+    // the default composer target has no samples, so every geometry edge was
+    // hard-aliased. Size it to the real drawing buffer (DPR-aware), not CSS px.
+    const db0 = renderer.getDrawingBufferSize(new THREE.Vector2());
+    const msaaTarget = new THREE.WebGLRenderTarget(db0.x, db0.y, {
+      type: THREE.HalfFloatType,
+      samples: 4,
+    });
+    const composer = new EffectComposer(renderer, msaaTarget);
     composer.addPass(new RenderPass(scene, camera));
     this.bloom = new UnrealBloomPass(
       new THREE.Vector2(container.clientWidth, container.clientHeight),
-      0.32, 0.6, 0.42,   // strength, radius, threshold — household colors are
-                         // saturated but the dense core stacks additive glow;
-                         // less bloom, higher cutoff keeps hues out of the blob
+      0.17, 0.55, 0.62,  // strength, radius, threshold — a whisper of bloom so
+                          // hues stay legible bodies, not a neon candy wash
     );
     composer.addPass(this.bloom);
     this.composer = composer;
@@ -584,9 +599,11 @@ export class ColonyScene {
     // modest cells wear their clan color loudly — no more grey-blue mush.
     const capT = Math.min(1, Math.max(0, (a.genome.capability - 1250) / 600));
     if (a.status === STATUS.Egg) {
-      this._c.setHSL(hue, 0.68, 0.40 + capT * 0.08);   // dormant, but still kin
+      this._c.setHSL(hue, 0.40, 0.34 + capT * 0.07);   // dormant, but still kin
     } else {
-      this._c.setHSL(hue, 0.80 + capT * 0.18, 0.56 + capT * 0.14);
+      // Tinted-glass jewel, not a gumball: moderate saturation and a lower
+      // lightness so the band reads deep and cinematic instead of milky candy.
+      this._c.setHSL(hue, 0.48 + capT * 0.13, 0.44 + capT * 0.11);
     }
     return this._c;
   }
@@ -605,7 +622,7 @@ export class ColonyScene {
 
     const skinMat = new THREE.MeshBasicMaterial({
       color: col.clone().lerp(new THREE.Color("#ffffff"), 0.18),
-      transparent: true, opacity: 0.34, blending: THREE.AdditiveBlending, depthWrite: false,
+      transparent: true, opacity: 0.2, blending: THREE.AdditiveBlending, depthWrite: false,
     });
     const orgMat = new THREE.MeshBasicMaterial({
       color: col.clone().lerp(new THREE.Color("#ffffff"), 0.35),
@@ -923,7 +940,10 @@ export class ColonyScene {
     this.camera.aspect = w / h;
     this.camera.updateProjectionMatrix();
     this.renderer.setSize(w, h);
-    this.composer.setSize(w, h);
+    // Size the composer to the DRAWING BUFFER, not CSS px — the earlier CSS
+    // sizing silently dropped the post buffer to 1x, softening everything.
+    const db = this.renderer.getDrawingBufferSize(this._dbTmp || (this._dbTmp = new THREE.Vector2()));
+    this.composer.setSize(db.x, db.y);
   }
 
   /** Adaptive resolution: sample real frame rate every ~1.5s and step the
@@ -941,8 +961,7 @@ export class ColonyScene {
     if (next === this.dprCur) return;
     this.dprCur = next;
     this.renderer.setPixelRatio(next);
-    if (this.composer.setPixelRatio) this.composer.setPixelRatio(next);
-    this.#resize();
+    this.#resize();   // recomputes composer buffer from the new DPR
   }
 
   #startLoop() {

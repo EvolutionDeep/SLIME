@@ -8,7 +8,7 @@
 // All comments in English by project convention.
 
 const LS_WALLET = "slime-wallet";
-const MAX_MARKERS = 10;
+const MAX_MARKERS = 5;   // a calm handful, not a field plastered with chips
 
 const $ = (id) => document.getElementById(id);
 const esc = (s) => String(s ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
