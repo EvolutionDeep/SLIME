@@ -28,12 +28,12 @@ const COLOR = {
   dead: new THREE.Color("#55628a"),
 };
 
-function agentColor(a) {
-  if (a.status === STATUS.Egg) return COLOR.egg;
-  if (a.status === STATUS.Quarantined) return COLOR.quarantined;
-  if (a.status === STATUS.Dead) return COLOR.dead;
-  const t = Math.min(1, Math.max(0, (a.genome.capability - 1100) / 900));
-  return COLOR.aliveLow.clone().lerp(COLOR.aliveHigh, t);
+// Clan palette: every gen-1 founder gets a hue from the golden-ratio sequence,
+// so sibling lineages land on maximally distinct colors and the colony reads
+// as a mosaic of tribes instead of one monochrome blob.
+const GOLDEN = 0.61803398875;
+function founderHue(id) {
+  return (id * GOLDEN) % 1;
 }
 
 // Deterministic per-agent jitter so layout never flickers between frames.
@@ -168,9 +168,9 @@ void main() {
   // Membrane grain from the displacement field: mottled, veined surface.
   float grain = 0.5 + 0.5 * sin(vN * 11.0) * (0.6 + 0.4 * vN);
   float veins = smoothstep(0.35, 0.85, abs(vN));
-  vec3 body = uColor * (0.08 + 0.10 * grain + 0.06 * veins);
+  vec3 body = uColor * (0.12 + 0.16 * grain + 0.08 * veins);
   vec3 glow = uColor * (0.85 + 0.65 * uEnergy) * fres;
-  gl_FragColor = vec4(body + glow, 0.38 + fres * 0.55);
+  gl_FragColor = vec4(body + glow, 0.45 + fres * 0.5);
 }
 `;
 
@@ -210,6 +210,9 @@ export class ColonyScene {
     this.lastUserZoom = -99;
     // Renderer-side perf kit: shared scratch objects + O(1) hover lookup.
     this.coreIds = new Map();     // core mesh -> agent id
+    this.clanHue = new Map();     // agent id -> lineage hue [0,1)
+    this.sib = new Map();         // agent id -> {i, n} sibling slot around parent
+    this._c = new THREE.Color();
     this._q = new THREE.Quaternion();
     this._swayAxis = new THREE.Vector3();
 
@@ -251,9 +254,9 @@ export class ColonyScene {
     composer.addPass(new RenderPass(scene, camera));
     this.bloom = new UnrealBloomPass(
       new THREE.Vector2(container.clientWidth, container.clientHeight),
-      0.4, 0.6, 0.38,   // strength, radius, threshold — dense 300+ colonies
-                        // stack additive glow; a higher threshold keeps the
-                        // cluster core readable instead of one white blob
+      0.32, 0.6, 0.42,   // strength, radius, threshold — household colors are
+                         // saturated but the dense core stacks additive glow;
+                         // less bloom, higher cutoff keeps hues out of the blob
     );
     composer.addPass(this.bloom);
     this.composer = composer;
@@ -473,11 +476,12 @@ export class ColonyScene {
 
   /** Full reconciliation of visuals against colony state. */
   sync(colony) {
+    this.#layoutMeta(colony);
     const seen = new Set();
     for (const a of colony.agents.values()) {
       if (a.status === STATUS.Dead) continue;
       seen.add(a.id);
-      const col = agentColor(a);
+      const col = this.#colorOf(a);
       let v = this.visuals.get(a.id);
       if (!v) v = this.#buildCell(a, col);
       const base = 1.7 + Math.min(4.6, a.genome.size_kb / 360);
@@ -494,7 +498,7 @@ export class ColonyScene {
       v.group.scale.setScalar(s);
       v.halo.scale.setScalar(3.4);   // local units — multiplied by group scale
       v.halo.material.color.copy(col);
-      v.halo.material.opacity = Math.min(0.4, 0.05 + energy * 0.26);
+      v.halo.material.opacity = Math.min(0.42, 0.10 + energy * 0.28);
       v.pos = this.#position(a.id, a);
       v.group.position.copy(v.pos);
       // Guardian crown: a warm gold mote hovering over claimed slimes —
@@ -542,6 +546,48 @@ export class ColonyScene {
     this.#followCentroid(colony);
   }
 
+  /** Per-poll layout metadata: sibling slots (even fan-out around the parent)
+   *  and household hues — color keys on the PARENT, so every sister cluster
+   *  shares one hue and hundreds of households spread across the wheel via
+   *  the golden-ratio sequence. Clan-founder colors failed: one bloodline can
+   *  be 80% of the dish, which just recreates the monochrome blob. */
+  #layoutMeta(colony) {
+    const kids = new Map();
+    for (const a of colony.agents.values()) {
+      if (a.status === STATUS.Dead || a.parent == null) continue;
+      let list = kids.get(a.parent);
+      if (!list) kids.set(a.parent, (list = []));
+      list.push(a.id);
+    }
+    this.sib.clear();
+    for (const list of kids.values()) {
+      list.sort((x, y) => x - y);
+      for (let i = 0; i < list.length; i++) this.sib.set(list[i], { i, n: list.length });
+    }
+    this.clanHue.clear();
+    for (const a of colony.agents.values()) {
+      if (a.status === STATUS.Dead) continue;
+      this.clanHue.set(a.id, founderHue(a.parent ?? a.id));
+    }
+  }
+
+  /** Household color: one hue per parent-family, brightness/saturation from
+   *  capability — a fit elder literally glows hotter than its sluggish kin. */
+  #colorOf(a) {
+    if (a.status === STATUS.Quarantined) return COLOR.quarantined;
+    if (a.status === STATUS.Dead) return COLOR.dead;
+    const hue = this.clanHue.get(a.id) ?? 0.45;
+    // Wild capability spans ~1300–1700: map onto a wide, vivid band so even
+    // modest cells wear their clan color loudly — no more grey-blue mush.
+    const capT = Math.min(1, Math.max(0, (a.genome.capability - 1250) / 600));
+    if (a.status === STATUS.Egg) {
+      this._c.setHSL(hue, 0.68, 0.40 + capT * 0.08);   // dormant, but still kin
+    } else {
+      this._c.setHSL(hue, 0.80 + capT * 0.18, 0.56 + capT * 0.14);
+    }
+    return this._c;
+  }
+
   /** Assemble one amoeba: deforming body, nucleus, organelles, pseudopods. */
   #buildCell(a, col) {
     const r = hashRand(a.id * 3301 + 7);
@@ -555,11 +601,11 @@ export class ColonyScene {
     this.coreIds.set(core, a.id);
 
     const skinMat = new THREE.MeshBasicMaterial({
-      color: col.clone().lerp(new THREE.Color("#ffffff"), 0.25),
+      color: col.clone().lerp(new THREE.Color("#ffffff"), 0.18),
       transparent: true, opacity: 0.34, blending: THREE.AdditiveBlending, depthWrite: false,
     });
     const orgMat = new THREE.MeshBasicMaterial({
-      color: col.clone().lerp(new THREE.Color("#ffffff"), 0.5),
+      color: col.clone().lerp(new THREE.Color("#ffffff"), 0.35),
       transparent: true, opacity: 0.85, depthWrite: false,
     });
 
@@ -719,14 +765,17 @@ export class ColonyScene {
       const parentPos = this.posMap.get(a.parent) ?? new THREE.Vector3(0, 0, 0);
       if (!this.posMap.has(a.parent)) this.posMap.set(a.parent, parentPos);
       const r = hashRand(id * 7919 + 17);
-      // Random direction on the sphere, flattened vertically (mold spreads).
-      const th = r() * Math.PI * 2;
-      const ph = Math.acos(2 * r() - 1);
-      const dist = 26 + a.gen * 4.5 + r() * 16;
+      // Siblings fan out evenly inside their sector of the parent instead of
+      // random directions — lineages grow as branching families, not a pile.
+      const s = this.sib.get(id) || { i: 0, n: 1 };
+      const sector = (Math.PI * 2) / s.n;
+      const th = id * 0.37 + s.i * sector + (r() - 0.5) * sector * 0.65;
+      const tilt = (r() - 0.5) * 1.05;                  // mild vertical spread
+      const dist = 24 + a.gen * 5.5 + r() * 14;
       p = new THREE.Vector3(
-        parentPos.x + dist * Math.sin(ph) * Math.cos(th),
-        parentPos.y + dist * Math.cos(ph) * 0.45,
-        parentPos.z + dist * Math.sin(ph) * Math.sin(th),
+        parentPos.x + Math.cos(th) * dist,
+        parentPos.y + Math.sin(tilt) * dist * 0.42,
+        parentPos.z + Math.sin(th) * dist,
       );
     }
     this.posMap.set(id, p);
@@ -746,7 +795,9 @@ export class ColonyScene {
       if (w >= this.maxEdges) break;
       pos[w * 6] = p.x; pos[w * 6 + 1] = p.y; pos[w * 6 + 2] = p.z;
       pos[w * 6 + 3] = c.x; pos[w * 6 + 4] = c.y; pos[w * 6 + 5] = c.z;
-      const pc = agentColor(pa), cc = agentColor(a);
+      // #colorOf returns a shared scratch color — clone before the next call.
+      const pc = this.#colorOf(pa).clone();
+      const cc = this.#colorOf(a);
       col[w * 6] = pc.r * 0.5; col[w * 6 + 1] = pc.g * 0.5; col[w * 6 + 2] = pc.b * 0.5;
       col[w * 6 + 3] = cc.r * 0.85; col[w * 6 + 4] = cc.g * 0.85; col[w * 6 + 5] = cc.b * 0.85;
       w++;
