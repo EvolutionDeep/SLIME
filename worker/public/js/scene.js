@@ -15,7 +15,10 @@ import { OrbitControls } from "three/addons/controls/OrbitControls.js";
 import { EffectComposer } from "three/addons/postprocessing/EffectComposer.js";
 import { RenderPass } from "three/addons/postprocessing/RenderPass.js";
 import { UnrealBloomPass } from "three/addons/postprocessing/UnrealBloomPass.js";
-import { STATUS } from "./engine.js";
+
+// Agent lifecycle states — the engine now runs server-side (worker/src),
+// the renderer only needs the constants to color and shape each cell.
+const STATUS = { Egg: "Egg", Alive: "Alive", Quarantined: "Quarantined", Dead: "Dead" };
 
 const COLOR = {
   aliveLow: new THREE.Color("#2dd4a7"),
@@ -381,6 +384,19 @@ export class ColonyScene {
   onHover(cb) { this.hoverCb = cb; }
   onSelect(cb) { this.selectCb = cb; }
 
+  /** Project an agent's world position to viewport pixels (claim markers). */
+  project(agentId) {
+    const p = this.posMap.get(agentId);
+    if (!p) return null;
+    const v = p.clone().project(this.camera);
+    if (v.z > 1) return null; // behind the camera
+    const r = this.container.getBoundingClientRect();
+    return {
+      x: (v.x * 0.5 + 0.5) * r.width + r.left,
+      y: (-v.y * 0.5 + 0.5) * r.height + r.top,
+    };
+  }
+
   /** Drop all colony visuals for a fresh population. */
   reset() {
     for (const v of this.visuals.values()) {
@@ -389,6 +405,7 @@ export class ColonyScene {
       v.skinMat.dispose();
       v.orgMat.dispose();
       v.halo.material.dispose();
+      if (v.crown) v.crown.material.dispose();
     }
     this.visuals.clear();
     this.posMap.clear();
@@ -466,6 +483,23 @@ export class ColonyScene {
       v.halo.material.opacity = Math.min(0.4, 0.05 + energy * 0.26);
       v.pos = this.#position(a.id, a);
       v.group.position.copy(v.pos);
+      // Guardian crown: a warm gold mote hovering over claimed slimes —
+      // visible proof that someone out there is keeping this one alive.
+      if (a.guardian && !v.crown) {
+        const crown = new THREE.Sprite(new THREE.SpriteMaterial({
+          map: this.glowTex, color: 0xffd66a, transparent: true,
+          blending: THREE.AdditiveBlending, depthWrite: false,
+        }));
+        crown.scale.setScalar(1.15);
+        crown.position.y = 1.9;
+        v.group.add(crown);
+        v.crown = crown;
+      } else if (!a.guardian && v.crown) {
+        v.group.remove(v.crown);
+        v.crown.material.dispose();
+        v.crown = null;
+      }
+      if (v.crown) v.crown.position.y = 1.9 + 0.12 * Math.sin(this.time * 2.4 + a.id);
       // Quarantine cage ring.
       if (a.status === STATUS.Quarantined && !v.ring) {
         const ring = new THREE.Mesh(

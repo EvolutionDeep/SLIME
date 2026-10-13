@@ -44,14 +44,14 @@
 
   <section class="hud top-right telemetry">
     <div class="panel-head">
-      <span>colony telemetry</span>
-      <span class="rec"><i></i>obs</span>
+      <span>the shared world</span>
+      <span class="season"><i class="season-track"><i id="season-bar"></i></i><b id="season-cd">–s</b></span>
     </div>
     <div class="gauges">
-      <div class="stat"><label>epoch</label><value id="st-epoch">0</value></div>
+      <div class="stat"><label>season</label><value id="st-epoch">0</value></div>
       <div class="stat"><label>colony</label><value id="st-pop">1</value></div>
       <div class="stat"><label>alive</label><value id="st-alive">1</value></div>
-      <div class="stat"><label>max gen</label><value id="st-gen">0</value></div>
+      <div class="stat"><label>claimed</label><value id="st-claimed">0/0</value></div>
       <div class="stat"><label>ever born</label><value id="st-total">1</value></div>
       <div class="stat r0">
         <label>R₀ · EMA</label><value id="st-r0">0.00</value>
@@ -65,11 +65,8 @@
 
   <section class="hud bottom-left">
     <div class="controls">
-      <button id="btn-pause">⏸ pause</button>
-      <button id="btn-speed">×1</button>
-      <button id="btn-reset">⟲ new seed</button>
       <button id="btn-rotate">◉ orbit</button>
-      <button id="btn-keeper">✦ my slimes</button>
+      <button id="btn-keeper">✦ chain cockpit</button>
       <button id="btn-about">? the paper</button>
     </div>
     <div class="curve-wrap">
@@ -87,6 +84,28 @@
   </section>
 
   <aside id="card" class="hud report hidden"></aside>
+
+  <!-- ══ RPG layer: claim dock, wallet modal, world markers, toast ══ -->
+  <div id="markers" class="markers" aria-hidden="false"></div>
+
+  <nav id="dock" class="rpg-dock"></nav>
+
+  <div id="claim-modal" class="modal hidden">
+    <div class="modal-card">
+      <div class="modal-head"><span id="modal-agent">PICK A SLIME</span><span class="plate-dim">guardianship registry</span></div>
+      <h3>Link your wallet</h3>
+      <p class="modal-rule">first touch claims forever · the whole world sees your
+        mark on this slime · claims migrate on-chain when the program deploys.
+        no signature needed pre-chain — an address is a name tag, not a key.</p>
+      <input id="wallet-modal-input" placeholder="paste a Solana address (your holder wallet)" spellcheck="false" />
+      <div class="modal-actions">
+        <button id="btn-modal-enter" class="primary">enter the colony</button>
+        <button id="btn-modal-cancel">cancel</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="toast" class="toast"></div>
 
   <aside id="keeper" class="hud keeper-panel hidden">
     <div class="panel-head"><span>keeper cockpit</span><span class="plate-dim">holder ledger</span></div>

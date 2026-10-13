@@ -2,6 +2,11 @@
 //
 // Routes (JSON):
 //   GET /health                 liveness + deployment hints
+//   GET /api/world              THE shared world: one colony, one clock,
+//                               every visitor renders the same truth
+//   GET /api/claims             guardian registry (pre-chain, moves on-chain)
+//   POST /api/claim             {address, agentId} — first touch claims
+//   POST /api/feed              {address, agentId} — guardian feeds its slime
 //   GET /api/config             protocol Config account
 //   GET /api/agents?limit=      fleet listing
 //   GET /api/agent/:id          one agent
@@ -18,12 +23,14 @@
 import { SlimeChain } from "./rpc";
 import { bs58Encode } from "./decode";
 import { runCron } from "./cron";
+import { worldView, getClaims, claimAgent, feedAgent } from "./world";
 
 export interface Env {
   RPC_URL: string;
   PROGRAM_ID: string;
   VERIFIER_KEY?: string;
   ASSETS: FetchStorage;
+  WORLD?: KVNamespace;
 }
 
 interface FetchStorage {
@@ -75,6 +82,36 @@ export default {
           programDeployed: ours,
           verifierKeyConfigured: Boolean(env.VERIFIER_KEY),
         });
+      }
+
+      // ---------------------------------------------------------------------
+      // The shared world (authoritative, deterministic, clock-driven).
+      // ---------------------------------------------------------------------
+
+      if (path === "/api/world") {
+        const since = Number(url.searchParams.get("since") ?? -1);
+        return json(await worldView(env, Number.isFinite(since) ? since : -1));
+      }
+
+      if (path === "/api/claims") {
+        return json(await getClaims(env));
+      }
+
+      if (request.method === "POST" && (path === "/api/claim" || path === "/api/feed")) {
+        const body = (await request.json().catch(() => null)) as
+          | { address?: string; agentId?: number } | null;
+        const addr = body?.address ?? "";
+        const id = Number(body?.agentId);
+        if (!/^[1-9A-HJ-NP-Za-km-z]{32,44}$/.test(addr) || !Number.isInteger(id) || id < 0) {
+          return json({ error: "address and numeric agentId required" }, 400);
+        }
+        if (path === "/api/claim") {
+          const r = await claimAgent(env, addr, id);
+          return json(r, r.ok ? 200 : 409);
+        }
+        const { epoch } = await worldView(env, -1);
+        const r = await feedAgent(env, addr, id, epoch);
+        return json(r, r.ok ? 200 : 409);
       }
 
       if (path === "/api/config") {

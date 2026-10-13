@@ -1,10 +1,14 @@
-// engine.js — Browser-side digital twin of the SLIME protocol.
+// engine.js — THE authoritative SLIME world engine, running server-side.
 //
-// Mirrors scripts/sim.mjs + scripts/verifier.mjs + scripts/protocol.mjs so
-// the 3D dashboard shows exactly the same population dynamics as the Node
-// sandbox: capability floor, size ceiling, Lamarckian notes inheritance,
-// three-layer credit caps and blue-team quarantine. Pure sandbox math —
-// no network, no devices, no weights.
+// One world, one truth: this engine executes only inside the Worker, so
+// every visitor observes the exact same colony at the same clock position
+// (the simulation is fully deterministic — mulberry32 + hashed task seeds,
+// zero Math.random). The browser is a pure renderer over /api/world.
+//
+// Mirrors scripts/sim.mjs + scripts/verifier.mjs + scripts/protocol.mjs:
+// capability floor, size ceiling, Lamarckian notes inheritance, three-layer
+// credit caps and blue-team quarantine. Pure sandbox math — no network, no
+// devices, no weights.
 //
 // All comments in English by project convention.
 
@@ -131,7 +135,15 @@ export const STATUS = { Egg: "Egg", Alive: "Alive", Quarantined: "Quarantined", 
 export class Colony {
   constructor(cfg = DEFAULT_CFG) {
     this.cfg = cfg;
-    this.rand = mulberry32(cfg.seed);
+    // PRNG state lives on the instance (not in a closure) so the whole
+    // world can be snapshotted to JSON and resumed on any Worker isolate.
+    this.randA = cfg.seed >>> 0;
+    this.rand = () => {
+      this.randA = (this.randA + 0x6d2b79f5) >>> 0;
+      let t = Math.imul(this.randA ^ (this.randA >>> 15), 1 | this.randA);
+      t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+      return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+    };
     this.epoch = 0;
     this.nextId = 0;
     this.agents = new Map();
@@ -140,7 +152,33 @@ export class Colony {
     this.firstTry = new Map(); // generation -> {wins, total}
     this.totalEver = 0;
     this.maxGen = 0;
-    this.#genesis();
+    if (!cfg.__resume) this.#genesis();
+  }
+
+  /** JSON-safe state of the entire world (agents are plain objects). */
+  snapshot() {
+    return {
+      epoch: this.epoch, nextId: this.nextId, randA: this.randA,
+      daySpent: this.daySpent, r0ema: this.r0ema,
+      totalEver: this.totalEver, maxGen: this.maxGen,
+      agents: [...this.agents.values()],
+      firstTry: [...this.firstTry.entries()],
+    };
+  }
+
+  /** Rebuild a Colony exactly at a previous snapshot point. */
+  static restore(cfg, s) {
+    const c = new Colony({ ...cfg, __resume: true });
+    c.epoch = s.epoch;
+    c.nextId = s.nextId;
+    c.randA = s.randA;
+    c.daySpent = s.daySpent;
+    c.r0ema = s.r0ema;
+    c.totalEver = s.totalEver;
+    c.maxGen = s.maxGen;
+    c.agents = new Map(s.agents.map((a) => [a.id, a]));
+    c.firstTry = new Map(s.firstTry);
+    return c;
   }
 
   #genesis() {
