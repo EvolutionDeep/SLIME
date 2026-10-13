@@ -1,11 +1,12 @@
-﻿// scene.js 鈥?Three.js rendering of the SLIME colony.
+﻿// scene.js — Three.js rendering of the SLIME colony.
 //
-// Art direction: a BIOLUMINESCENT COLONY INSIDE A PETRI DISH.
-// Agents are not spheres 鈥?they are living cells: a membrane that writhes
-// with peristaltic waves (vertex displacement), a Fresnel rim that glows
-// where the surface curves away from the eye, a brighter nucleus suspended
-// inside. Everything blooms. The dish floor, drifting spores and the
-// containment haze give the colony scale and depth.
+// Art direction: AMOEBA, NOT BALLOONS. Every agent is a deforming single
+// cell: a 3D simplex-noise field drives vertex displacement so the
+// silhouette genuinely writhes (never a circle at any distance), the body
+// is stretched along a per-agent axis, thin pseudopod cones reach out and
+// quiver, and organelles orbit inside the translucent membrane. The camera
+// auto-frames the colony: small population = macro close-up where one cell
+// fills the screen; big population = slow pull-back over the dish.
 //
 // All comments in English by project convention.
 
@@ -17,10 +18,10 @@ import { UnrealBloomPass } from "three/addons/postprocessing/UnrealBloomPass.js"
 import { STATUS } from "./engine.js";
 
 const COLOR = {
-  aliveLow: new THREE.Color("#2dd4a7"),   // low capability: deep green
-  aliveHigh: new THREE.Color("#7df9ff"),  // high capability: electric cyan
-  egg: new THREE.Color("#b58cff"),        // dormant violet
-  quarantined: new THREE.Color("#ff5470"),// alarm red
+  aliveLow: new THREE.Color("#2dd4a7"),
+  aliveHigh: new THREE.Color("#7df9ff"),
+  egg: new THREE.Color("#b58cff"),
+  quarantined: new THREE.Color("#ff5470"),
   dead: new THREE.Color("#37413f"),
 };
 
@@ -43,21 +44,19 @@ function hashRand(seed) {
   };
 }
 
-// Soft radial sprite for glow halos.
 function glowTexture() {
   const c = document.createElement("canvas");
   c.width = c.height = 128;
   const g = c.getContext("2d");
   const grad = g.createRadialGradient(64, 64, 0, 64, 64, 64);
   grad.addColorStop(0, "rgba(255,255,255,0.8)");
-  grad.addColorStop(0.3, "rgba(255,255,255,0.22)");
+  grad.addColorStop(0.3, "rgba(255,255,255,0.2)");
   grad.addColorStop(1, "rgba(255,255,255,0)");
   g.fillStyle = grad;
   g.fillRect(0, 0, 128, 128);
   return new THREE.CanvasTexture(c);
 }
 
-// Deep radial background: lit from colony center, contained by darkness.
 function bgTexture() {
   const c = document.createElement("canvas");
   c.width = c.height = 512;
@@ -72,64 +71,114 @@ function bgTexture() {
 }
 
 // ---------------------------------------------------------------------------
-// Living-cell shader: peristaltic membrane + Fresnel bioluminescence.
+// The amoeba shader. Ashima 3D simplex noise drives real vertex displacement
+// — the silhouette morphs continuously, which no scale-pulse can fake.
 // ---------------------------------------------------------------------------
+
+const SNOISE = /* glsl */ `
+vec3 mod289(vec3 x){return x - floor(x * (1.0/289.0)) * 289.0;}
+vec4 mod289(vec4 x){return x - floor(x * (1.0/289.0)) * 289.0;}
+vec4 permute(vec4 x){return mod289(((x*34.0)+1.0)*x);}
+vec4 taylorInvSqrt(vec4 r){return 1.79284291400159 - 0.85373472095314 * r;}
+float snoise(vec3 v){
+  const vec2 C = vec2(1.0/6.0, 1.0/3.0);
+  const vec4 D = vec4(0.0, 0.5, 1.0, 2.0);
+  vec3 i  = floor(v + dot(v, C.yyy));
+  vec3 x0 = v - i + dot(i, C.xxx);
+  vec3 g = step(x0.yzx, x0.xyz);
+  vec3 l = 1.0 - g;
+  vec3 i1 = min(g.xyz, l.zxy);
+  vec3 i2 = max(g.xyz, l.zxy);
+  vec3 x1 = x0 - i1 + C.xxx;
+  vec3 x2 = x0 - i2 + C.yyy;
+  vec3 x3 = x0 - D.yyy;
+  i = mod289(i);
+  vec4 p = permute(permute(permute(
+             i.z + vec4(0.0, i1.z, i2.z, 1.0))
+           + i.y + vec4(0.0, i1.y, i2.y, 1.0))
+           + i.x + vec4(0.0, i1.x, i2.x, 1.0));
+  float n_ = 0.142857142857;
+  vec3 ns = n_ * D.wyz - D.xzx;
+  vec4 j = p - 49.0 * floor(p * ns.z * ns.z);
+  vec4 x_ = floor(j * ns.z);
+  vec4 y_ = floor(j - 7.0 * x_);
+  vec4 x = x_ * ns.x + ns.yyyy;
+  vec4 y = y_ * ns.x + ns.yyyy;
+  vec4 h = 1.0 - abs(x) - abs(y);
+  vec4 b0 = vec4(x.xy, y.xy);
+  vec4 b1 = vec4(x.zw, y.zw);
+  vec4 s0 = floor(b0) * 2.0 + 1.0;
+  vec4 s1 = floor(b1) * 2.0 + 1.0;
+  vec4 sh = -step(h, vec4(0.0));
+  vec4 a0 = b0.xzyw + s0.xzyw * sh.xxyy;
+  vec4 a1 = b1.xzyw + s1.xzyw * sh.zzww;
+  vec3 p0 = vec3(a0.xy, h.x);
+  vec3 p1 = vec3(a0.zw, h.y);
+  vec3 p2 = vec3(a1.xy, h.z);
+  vec3 p3 = vec3(a1.zw, h.w);
+  vec4 norm = taylorInvSqrt(vec4(dot(p0,p0), dot(p1,p1), dot(p2,p2), dot(p3,p3)));
+  p0 *= norm.x; p1 *= norm.y; p2 *= norm.z; p3 *= norm.w;
+  vec4 m = max(0.6 - vec4(dot(x0,x0), dot(x1,x1), dot(x2,x2), dot(x3,x3)), 0.0);
+  m = m * m;
+  return 42.0 * dot(m * m, vec4(dot(p0,x0), dot(p1,x1), dot(p2,x2), dot(p3,x3)));
+}
+`;
 
 const CELL_VERT = /* glsl */ `
 uniform float uTime;
 uniform float uSeed;
 uniform float uAmp;
+uniform float uFreq;
+uniform vec3 uStretch;
 varying vec3 vNormal;
 varying vec3 vView;
-varying float vWob;
-
-// Three stacked sine products read as organic peristaltic waves.
-float wob(vec3 p, float t) {
-  return sin(p.x * 2.1 + t * 1.6) * 0.5
-       + sin(p.y * 2.7 + t * 1.1 + p.z * 1.3) * 0.3
-       + sin(p.z * 1.9 - t * 1.3 + uSeed) * 0.2;
-}
-
+varying float vN;
+${SNOISE}
 void main() {
-  vec3 p = position;
-  float w = wob(p * 1.6 + uSeed, uTime);
-  vWob = w;
-  p += normal * w * uAmp;
-  vec4 mv = modelViewMatrix * vec4(p, 1.0);
+  // Non-uniform stretch makes some cells oval, others stubby.
+  vec3 p = position * uStretch;
+  vec3 base = normalize(p);
+  vec3 q = p * uFreq + vec3(uSeed);
+  // Two noise octaves, domains drifting in opposite directions: the body
+  // rolls and reshapes instead of merely pulsing.
+  float n = snoise(q + vec3(0.0, uTime * 0.42, uTime * 0.18)) * 0.65
+          + snoise(q * 2.4 - vec3(uTime * 0.3, 0.0, uTime * 0.12)) * 0.35;
+  vN = n;
+  vec3 disp = p + base * n * uAmp;
+  vec4 mv = modelViewMatrix * vec4(disp, 1.0);
   vView = -mv.xyz;
-  vNormal = normalize(normalMatrix * normal);
+  vNormal = normalize(normalMatrix * base);
   gl_Position = projectionMatrix * mv;
 }
 `;
 
 const CELL_FRAG = /* glsl */ `
 uniform vec3 uColor;
-uniform float uEnergy;   // 0..1 鈥?metabolic brightness
-uniform float uTime;
+uniform float uEnergy;
 varying vec3 vNormal;
 varying vec3 vView;
-varying float vWob;
-
+varying float vN;
 void main() {
   vec3 N = normalize(vNormal);
   vec3 V = normalize(vView);
-  float fres = pow(1.0 - abs(dot(N, V)), 2.2);
-  // Mottled cytoplasm: the wobble field doubles as a luminance pattern.
-  float mottle = 0.5 + 0.5 * sin(vWob * 6.0 + uTime * 0.8);
-  vec3 body = uColor * (0.10 + 0.07 * mottle);
-  vec3 rim = uColor * (0.85 + 0.55 * uEnergy);
-  vec3 col = body + rim * fres;
-  float alpha = 0.34 + fres * 0.5;
-  gl_FragColor = vec4(col, alpha);
+  float fres = pow(1.0 - abs(dot(N, V)), 2.0);
+  // Membrane grain from the displacement field: mottled, veined surface.
+  float grain = 0.5 + 0.5 * sin(vN * 11.0) * (0.6 + 0.4 * vN);
+  float veins = smoothstep(0.35, 0.85, abs(vN));
+  vec3 body = uColor * (0.08 + 0.10 * grain + 0.06 * veins);
+  vec3 glow = uColor * (0.85 + 0.65 * uEnergy) * fres;
+  gl_FragColor = vec4(body + glow, 0.38 + fres * 0.55);
 }
 `;
 
-function cellMaterial(color, seed) {
+function cellMaterial(color, seed, amp, freq, stretch) {
   return new THREE.ShaderMaterial({
     uniforms: {
       uTime: { value: 0 },
       uSeed: { value: seed },
-      uAmp: { value: 0.14 },
+      uAmp: { value: amp },
+      uFreq: { value: freq },
+      uStretch: { value: stretch },
       uColor: { value: color.clone() },
       uEnergy: { value: 0.5 },
     },
@@ -147,99 +196,100 @@ export class ColonyScene {
     this.container = container;
     this.posMap = new Map();      // agent id -> Vector3
     this.visuals = new Map();     // agent id -> visual bundle
-    this.bursts = [];             // particle systems in flight
+    this.bursts = [];
     this.hoverCb = null;
     this.selectCb = null;
     this.selected = null;
     this.time = 0;
-    this.chainPts = [];           // selected ancestry path for the traveling pulse
+    this.chainPts = [];
+    this.fitRadius = 0;           // colony spread the camera keeps framed
+    this.lastUserZoom = -99;
 
     const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: false });
     renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
     renderer.setSize(container.clientWidth, container.clientHeight);
     renderer.toneMapping = THREE.ACESFilmicToneMapping;
-    renderer.toneMappingExposure = 0.92;
+    renderer.toneMappingExposure = 0.95;
     container.appendChild(renderer.domElement);
     this.renderer = renderer;
 
     const scene = new THREE.Scene();
     scene.background = bgTexture();
-    scene.fog = new THREE.FogExp2(0x02090f, 0.0042);
+    scene.fog = new THREE.FogExp2(0x02090f, 0.0022);
     this.scene = scene;
 
     const camera = new THREE.PerspectiveCamera(
-      52, container.clientWidth / container.clientHeight, 0.1, 1200,
+      52, container.clientWidth / container.clientHeight, 0.1, 2400,
     );
-    camera.position.set(92, 40, 128);   // low three-quarter 鈥?cinematic default
+    camera.position.set(96, 42, 132);
     this.camera = camera;
 
     const controls = new OrbitControls(camera, renderer.domElement);
     controls.enableDamping = true;
     controls.dampingFactor = 0.06;
     controls.autoRotate = true;
-    controls.autoRotateSpeed = 0.22;
-    controls.minDistance = 16;
-    controls.maxDistance = 300;
+    controls.autoRotateSpeed = 0.24;
+    controls.minDistance = 10;
+    controls.maxDistance = 620;
     this.controls = controls;
+    // Respect manual zooming: auto-fit pauses after the user touches it.
+    renderer.domElement.addEventListener("wheel", () => { this.lastUserZoom = this.time; }, { passive: true });
 
-    // Bloom 鈥?the single biggest quality lever. Everything emissive melts.
     const composer = new EffectComposer(renderer);
     composer.addPass(new RenderPass(scene, camera));
     this.bloom = new UnrealBloomPass(
       new THREE.Vector2(container.clientWidth, container.clientHeight),
-      0.45, 0.6, 0.38,   // strength, radius, threshold — glow, not fog
+      0.5, 0.6, 0.3,   // strength, radius, threshold
     );
     composer.addPass(this.bloom);
     this.composer = composer;
 
     scene.add(new THREE.AmbientLight(0x223344, 1.2));
-    const p1 = new THREE.PointLight(0x35ffc3, 1.0, 400); p1.position.set(60, 90, 60);
-    const p2 = new THREE.PointLight(0x7a5cff, 0.6, 400); p2.position.set(-80, -40, -60);
+    const p1 = new THREE.PointLight(0x35ffc3, 1.0, 700); p1.position.set(120, 160, 120);
+    const p2 = new THREE.PointLight(0x7a5cff, 0.6, 700); p2.position.set(-150, -70, -110);
     scene.add(p1, p2);
 
-    // --- The dish: polar grid floor + glowing rim, gives the colony scale.
-    const grid = new THREE.PolarGridHelper(150, 12, 6, 96, 0x1d5c4c, 0x0d2b26);
+    // --- The dish: bigger world so cells never crowd each other.
+    const grid = new THREE.PolarGridHelper(260, 14, 6, 96, 0x1d5c4c, 0x0d2b26);
     grid.material.transparent = true;
-    grid.material.opacity = 0.16;
+    grid.material.opacity = 0.15;
     grid.material.depthWrite = false;
-    grid.position.y = -46;
+    grid.position.y = -70;
     scene.add(grid);
     const rim = new THREE.Mesh(
-      new THREE.TorusGeometry(150, 0.55, 8, 160),
+      new THREE.TorusGeometry(260, 0.7, 8, 200),
       new THREE.MeshBasicMaterial({
-        color: 0x2bd9a8, transparent: true, opacity: 0.16, blending: THREE.AdditiveBlending,
+        color: 0x2bd9a8, transparent: true, opacity: 0.14, blending: THREE.AdditiveBlending,
       }),
     );
     rim.rotation.x = Math.PI / 2;
-    rim.position.y = -46;
+    rim.position.y = -70;
     scene.add(rim);
     this.rim = rim;
 
-    // Containment shell: barely-there geodesic glass.
     const shell = new THREE.Mesh(
-      new THREE.IcosahedronGeometry(158, 2),
+      new THREE.IcosahedronGeometry(275, 2),
       new THREE.MeshBasicMaterial({
-        color: 0x2b6b5a, wireframe: true, transparent: true, opacity: 0.045,
+        color: 0x2b6b5a, wireframe: true, transparent: true, opacity: 0.04,
       }),
     );
     scene.add(shell);
 
-    // --- Spore dust: two layers 鈥?near drifters and far motes.
-    this.spores = this.#makeSpores(320, 130, 0.42, 0x54c9ab);
-    this.motes = this.#makeSpores(700, 340, 0.26, 0x274f47);
+    // Spore dust: near drifters + far motes, slow parallax life.
+    this.spores = this.#makeSpores(360, 230, 0.5, 0x54c9ab);
+    this.motes = this.#makeSpores(800, 560, 0.32, 0x274f47);
 
-    // Mycelial lineage lines (rebuilt each epoch, preallocated buffers).
+    // Protoplasmic lineage filaments.
     this.maxEdges = 600;
     const edgeGeo = new THREE.BufferGeometry();
     edgeGeo.setAttribute("position", new THREE.BufferAttribute(new Float32Array(this.maxEdges * 6), 3));
     edgeGeo.setAttribute("color", new THREE.BufferAttribute(new Float32Array(this.maxEdges * 6), 3));
     this.edgeGeo = edgeGeo;
     scene.add(new THREE.LineSegments(edgeGeo, new THREE.LineBasicMaterial({
-      vertexColors: true, transparent: true, opacity: 0.5, depthWrite: false,
+      vertexColors: true, transparent: true, opacity: 0.55, depthWrite: false,
       blending: THREE.AdditiveBlending,
     })));
 
-    // Highlighted ancestry chain + a nutrient pulse traveling along it.
     this.chainLine = new THREE.Line(
       new THREE.BufferGeometry(),
       new THREE.LineBasicMaterial({
@@ -252,26 +302,29 @@ export class ColonyScene {
       map: glowTexture(), color: 0xaef7ff, transparent: true,
       blending: THREE.AdditiveBlending, depthWrite: false,
     }));
-    this.pulse.scale.setScalar(7);
+    this.pulse.scale.setScalar(12);
     this.pulse.visible = false;
     this.pulseT = 0;
     scene.add(this.pulse);
 
-    // Selection reticle: two billboarded rings, counter-rotating.
+    // Selection reticle.
     this.reticle = new THREE.Group();
     const reticleMat = new THREE.MeshBasicMaterial({
-      color: 0x7df9ff, transparent: true, opacity: 0.85, side: THREE.DoubleSide,
+      color: 0x7df9ff, transparent: true, opacity: 0.8, side: THREE.DoubleSide,
       blending: THREE.AdditiveBlending, depthWrite: false,
     });
-    const r1 = new THREE.Mesh(new THREE.RingGeometry(4.6, 4.85, 48), reticleMat);
-    const r2 = new THREE.Mesh(new THREE.RingGeometry(6.1, 6.2, 48, 1, 0, Math.PI * 1.4), reticleMat.clone());
+    const r1 = new THREE.Mesh(new THREE.RingGeometry(1.5, 1.58, 48), reticleMat);
+    const r2 = new THREE.Mesh(new THREE.RingGeometry(1.95, 2.03, 48, 1, 0, Math.PI * 1.4), reticleMat.clone());
     this.reticle.add(r1, r2);
     this.reticle.visible = false;
     scene.add(this.reticle);
 
     this.glowTex = glowTexture();
-    this.coreGeo = new THREE.SphereGeometry(1, 32, 24);
+    // Shared geometries: icosphere level 3 deforms smoothly at cell scale.
+    this.blobGeo = new THREE.IcosahedronGeometry(1, 3);
     this.nucleusGeo = new THREE.SphereGeometry(1, 12, 10);
+    this.organelleGeo = new THREE.SphereGeometry(1, 6, 5);
+    this.podGeo = new THREE.ConeGeometry(0.14, 1.1, 6, 1, true);
 
     // Pointer interaction.
     this.raycaster = new THREE.Raycaster();
@@ -303,7 +356,7 @@ export class ColonyScene {
     const g = new THREE.BufferGeometry();
     g.setAttribute("position", new THREE.BufferAttribute(pos, 3));
     const pts = new THREE.Points(g, new THREE.PointsMaterial({
-      color: colorHex, size, transparent: true, opacity: 0.42,
+      color: colorHex, size, transparent: true, opacity: 0.4,
       blending: THREE.AdditiveBlending, depthWrite: false, sizeAttenuation: true,
     }));
     pts.userData.seed = seed;
@@ -318,9 +371,9 @@ export class ColonyScene {
     const seed = pts.userData.seed;
     for (let i = 0; i < seed.length; i++) {
       const s = seed[i];
-      arr[i * 3] = base[i * 3] + Math.sin(t * 0.13 + s) * 2.4;
-      arr[i * 3 + 1] = base[i * 3 + 1] + Math.sin(t * 0.09 + s * 1.7) * 1.8;
-      arr[i * 3 + 2] = base[i * 3 + 2] + Math.cos(t * 0.11 + s * 0.6) * 2.4;
+      arr[i * 3] = base[i * 3] + Math.sin(t * 0.11 + s) * 3.4;
+      arr[i * 3 + 1] = base[i * 3 + 1] + Math.sin(t * 0.08 + s * 1.7) * 2.6;
+      arr[i * 3 + 2] = base[i * 3 + 2] + Math.cos(t * 0.1 + s * 0.6) * 3.4;
     }
     pts.geometry.attributes.position.needsUpdate = true;
   }
@@ -333,7 +386,8 @@ export class ColonyScene {
     for (const v of this.visuals.values()) {
       this.scene.remove(v.group);
       v.core.material.dispose();
-      v.nucleus.material.dispose();
+      v.skinMat.dispose();
+      v.orgMat.dispose();
       v.halo.material.dispose();
     }
     this.visuals.clear();
@@ -368,9 +422,7 @@ export class ColonyScene {
     this.chainLine.geometry.setFromPoints(pts);
     this.chainLine.visible = pts.length > 1;
     this.pulse.visible = pts.length > 1;
-    if (pts.length) {
-      this.tweenTarget = pts[pts.length - 1].clone();
-    }
+    if (pts.length) this.tweenTarget = pts[pts.length - 1].clone();
   }
 
   /** Consume the events emitted by Colony.tick() for visual effects. */
@@ -378,12 +430,12 @@ export class ColonyScene {
     for (const ev of events) {
       const a = ev.agent != null ? colony.agents.get(ev.agent) : null;
       const pos = a ? this.#position(a.id, a) : null;
-      if (ev.type === "birth" && pos) this.#burst(pos, 0x35ffc3, 18, 1.3);
-      else if (ev.type === "hatch" && pos) this.#burst(pos, 0xb58cff, 12, 0.9);
-      else if (ev.type === "death" && pos) this.#burst(pos, 0xff5470, 14, 1.0);
-      else if (ev.type === "quarantine" && pos) this.#burst(pos, 0xff2244, 30, 1.8);
+      if (ev.type === "birth" && pos) this.#burst(pos, 0x35ffc3, 18, 1.6);
+      else if (ev.type === "hatch" && pos) this.#burst(pos, 0xb58cff, 12, 1.2);
+      else if (ev.type === "death" && pos) this.#burst(pos, 0xff5470, 14, 1.3);
+      else if (ev.type === "quarantine" && pos) this.#burst(pos, 0xff2244, 30, 2.2);
       else if (ev.type === "attempt" && ev.ok && pos && Math.random() < 0.35) {
-        this.#burst(pos, 0x9dffe0, 5, 0.5); // subtle solve spark, rate-limited
+        this.#burst(pos, 0x9dffe0, 5, 0.7);
       }
     }
   }
@@ -396,44 +448,28 @@ export class ColonyScene {
       seen.add(a.id);
       const col = agentColor(a);
       let v = this.visuals.get(a.id);
-      if (!v) {
-        const seed = ((a.id * 2654435761) >>> 0) % 1000 / 1000 * Math.PI * 2;
-        const core = new THREE.Mesh(this.coreGeo, cellMaterial(col, seed));
-        const nucleus = new THREE.Mesh(
-          this.nucleusGeo,
-          new THREE.MeshBasicMaterial({ color: col.clone().lerp(new THREE.Color("#ffffff"), 0.16) }),
-        );
-        const halo = new THREE.Sprite(new THREE.SpriteMaterial({
-          map: this.glowTex, color: col, transparent: true,
-          blending: THREE.AdditiveBlending, depthWrite: false,
-        }));
-        const group = new THREE.Group();
-        group.add(halo, core, nucleus);
-        this.scene.add(group);
-        v = { group, core, nucleus, halo, ring: null, fade: 1, seed };
-        this.visuals.set(a.id, v);
-      }
-      const base = 0.9 + Math.min(2.4, a.genome.size_kb / 1400);
+      if (!v) v = this.#buildCell(a, col);
+      const base = 1.7 + Math.min(4.6, a.genome.size_kb / 360);
+      v.base = base;
       const energy = a.status === STATUS.Egg ? 0.15 : Math.min(1, a.energy / 120);
-      // Peristalsis: eggs breathe slowly, starving cells writhe harder.
       const u = v.core.material.uniforms;
       u.uColor.value.copy(col);
       u.uEnergy.value = energy;
-      u.uAmp.value = a.status === STATUS.Egg ? 0.06 : 0.10 + (1 - energy) * 0.10;
-      const wob = 1 + 0.05 * Math.sin(this.time * (a.status === STATUS.Egg ? 1.4 : 2.2) + a.id);
-      const hoverBoost = this.hovered === a.id ? 1.18 : 1;
-      v.core.scale.setScalar(base * wob * hoverBoost);
-      v.nucleus.scale.setScalar(base * 0.24 * wob);
-      v.nucleus.material.color.copy(col).lerp(new THREE.Color("#ffffff"), 0.16);
-      v.halo.scale.setScalar(base * 4.0);
+      // Eggs barely stir; healthy cells writhe; starving ones spasm harder.
+      u.uAmp.value = a.status === STATUS.Egg
+        ? 0.10
+        : (a.status === STATUS.Quarantined ? 0.26 : 0.34 + (1 - energy) * 0.14);
+      const s = base * (this.hovered === a.id ? 1.12 : 1);
+      v.group.scale.setScalar(s);
+      v.halo.scale.setScalar(3.4);   // local units — multiplied by group scale
       v.halo.material.color.copy(col);
-      v.halo.material.opacity = Math.min(0.45, 0.06 + energy * 0.3) * hoverBoost;
+      v.halo.material.opacity = Math.min(0.4, 0.05 + energy * 0.26);
       v.pos = this.#position(a.id, a);
       v.group.position.copy(v.pos);
       // Quarantine cage ring.
       if (a.status === STATUS.Quarantined && !v.ring) {
         const ring = new THREE.Mesh(
-          new THREE.TorusGeometry(base * 1.9, 0.12, 8, 40),
+          new THREE.TorusGeometry(1.9, 0.07, 8, 40),
           new THREE.MeshBasicMaterial({
             color: 0xff5470, transparent: true, opacity: 0.9, blending: THREE.AdditiveBlending,
           }),
@@ -451,7 +487,6 @@ export class ColonyScene {
         v.ring.material.opacity = 0.55 + 0.4 * Math.sin(this.time * 5);
       }
     }
-    // Fade out visuals of agents that just died.
     for (const [id, v] of this.visuals) {
       if (!seen.has(id) && v.fade > 0) v.dying = true;
     }
@@ -459,9 +494,107 @@ export class ColonyScene {
     this.#followCentroid(colony);
   }
 
+  /** Assemble one amoeba: deforming body, nucleus, organelles, pseudopods. */
+  #buildCell(a, col) {
+    const r = hashRand(a.id * 3301 + 7);
+    const seed = r() * Math.PI * 2;
+    const freq = 1.15 + r() * 0.7;
+    // Per-agent stretch: oval, stubby, needle-ish — no two silhouettes alike.
+    const stretch = new THREE.Vector3(
+      0.78 + r() * 0.55, 0.78 + r() * 0.55, 0.78 + r() * 0.55,
+    );
+    const core = new THREE.Mesh(this.blobGeo, cellMaterial(col, seed, 0.34, freq, stretch));
+
+    const skinMat = new THREE.MeshBasicMaterial({
+      color: col.clone().lerp(new THREE.Color("#ffffff"), 0.25),
+      transparent: true, opacity: 0.34, blending: THREE.AdditiveBlending, depthWrite: false,
+    });
+    const orgMat = new THREE.MeshBasicMaterial({
+      color: col.clone().lerp(new THREE.Color("#ffffff"), 0.5),
+      transparent: true, opacity: 0.85, depthWrite: false,
+    });
+
+    const nucleus = new THREE.Mesh(this.nucleusGeo, orgMat);
+    nucleus.scale.setScalar(0.3);
+    nucleus.position.set((r() - 0.5) * 0.3, (r() - 0.5) * 0.3, (r() - 0.5) * 0.3);
+
+    // Organelles orbit on random planes inside the cytoplasm.
+    const organelles = [];
+    for (let i = 0; i < 3; i++) {
+      const m = new THREE.Mesh(this.organelleGeo, orgMat);
+      m.scale.setScalar(0.07 + r() * 0.09);
+      const u = new THREE.Vector3(r() - 0.5, r() - 0.5, r() - 0.5).normalize();
+      const w = new THREE.Vector3(r() - 0.5, r() - 0.5, r() - 0.5).normalize();
+      const vAxis = new THREE.Vector3().crossVectors(u, w).normalize();
+      organelles.push({
+        mesh: m, u, v: vAxis,
+        rad: 0.35 + r() * 0.35, ang: r() * Math.PI * 2,
+        spd: (0.25 + r() * 0.5) * (r() > 0.5 ? 1 : -1),
+      });
+    }
+
+    // Pseudopods: thin cones reaching out, tips quivering.
+    const pods = [];
+    const podCount = 2 + Math.floor(r() * 3);
+    for (let i = 0; i < podCount; i++) {
+      const dir = new THREE.Vector3(r() - 0.5, r() - 0.5, r() - 0.5).normalize();
+      const m = new THREE.Mesh(this.podGeo, skinMat);
+      const baseQ = new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0, 1, 0), dir);
+      m.quaternion.copy(baseQ);
+      m.userData.dir = dir;
+      m.userData.baseQ = baseQ;
+      m.userData.phase = r() * Math.PI * 2;
+      m.userData.len = 0.8 + r() * 0.9;
+      pods.push(m);
+    }
+
+    const halo = new THREE.Sprite(new THREE.SpriteMaterial({
+      map: this.glowTex, color: col, transparent: true,
+      blending: THREE.AdditiveBlending, depthWrite: false,
+    }));
+
+    const group = new THREE.Group();
+    group.add(halo, core, nucleus, ...pods, ...organelles.map((o) => o.mesh));
+    this.scene.add(group);
+
+    const v = {
+      group, core, halo, nucleus, pods, organelles, ring: null, fade: 1,
+      skinMat, orgMat, base: 1,
+    };
+    this.visuals.set(a.id, v);
+    return v;
+  }
+
+  /** Per-frame cytoplasmic motion: organelle orbits + pseudopod quiver. */
+  #stepCells(dt) {
+    for (const v of this.visuals.values()) {
+      if (v.dying) continue;
+      const t = this.time;
+      for (const o of v.organelles) {
+        o.ang += dt * o.spd;
+        o.mesh.position.set(
+          Math.cos(o.ang) * o.u.x * o.rad + Math.sin(o.ang) * o.v.x * o.rad,
+          Math.cos(o.ang) * o.u.y * o.rad + Math.sin(o.ang) * o.v.y * o.rad,
+          Math.cos(o.ang) * o.u.z * o.rad + Math.sin(o.ang) * o.v.z * o.rad,
+        );
+      }
+      for (const p of v.pods) {
+        const d = p.userData;
+        const q = 0.6 + 0.4 * Math.sin(t * 1.9 + d.phase);   // extend/retract
+        p.scale.set(1, q * d.len, 1);
+        p.position.copy(d.dir).multiplyScalar(0.55 + q * 0.35);
+        // Sway around the resting direction (rebuilt from base each frame).
+        const sway = new THREE.Quaternion().setFromAxisAngle(
+          new THREE.Vector3(Math.sin(d.phase), Math.cos(d.phase * 1.3), Math.sin(d.phase * 0.7)).normalize(),
+          0.12 * Math.sin(t * 1.3 + d.phase),
+        );
+        p.quaternion.copy(d.baseQ).premultiply(sway);
+      }
+    }
+  }
+
   /** Keep the colony centered: gently drag the orbit target to the centroid. */
   #followCentroid(colony) {
-    // A user-selected agent holds the camera instead.
     if (this.selected != null) {
       const p = this.posMap.get(this.selected);
       if (p) { this.tweenTarget = p.clone(); return; }
@@ -479,6 +612,30 @@ export class ColonyScene {
     if (n > 0) this.tweenTarget = sum.multiplyScalar(1 / n);
   }
 
+  /** Auto-framing: the orbit distance tracks the colony's own spread. */
+  #measureSpread() {
+    if (this.posMap.size === 0) { this.fitRadius = 0; return; }
+    const c = this.controls.target;
+    let far = 0;
+    for (const p of this.posMap.values()) {
+      const d = p.distanceTo(c);
+      if (d > far) far = d;
+    }
+    this.fitRadius = far;
+  }
+
+  #autoFit(dt) {
+    if (!this.fitRadius) return;
+    // Pause auto-framing for a while after the user scrolls the zoom wheel.
+    if (this.time - this.lastUserZoom < 12) return;
+    // Close-up when small (cells fill the frame), overview when large.
+    const desired = Math.min(560, Math.max(42, this.fitRadius * 2.4 + 34));
+    const off = this.camera.position.clone().sub(this.controls.target);
+    const len = off.length();
+    const next = len + (desired - len) * Math.min(1, dt * 0.55);
+    this.camera.position.copy(this.controls.target).add(off.setLength(next));
+  }
+
   // -------------------------------------------------------------------------
 
   #position(id, a) {
@@ -493,7 +650,7 @@ export class ColonyScene {
       // Random direction on the sphere, flattened vertically (mold spreads).
       const th = r() * Math.PI * 2;
       const ph = Math.acos(2 * r() - 1);
-      const dist = 15 + a.gen * 3 + r() * 9;
+      const dist = 26 + a.gen * 4.5 + r() * 16;
       p = new THREE.Vector3(
         parentPos.x + dist * Math.sin(ph) * Math.cos(th),
         parentPos.y + dist * Math.cos(ph) * 0.45,
@@ -534,7 +691,7 @@ export class ColonyScene {
       pos[i * 3] = point.x; pos[i * 3 + 1] = point.y; pos[i * 3 + 2] = point.z;
       const th = Math.random() * Math.PI * 2;
       const ph = Math.acos(2 * Math.random() - 1);
-      const s = (0.6 + Math.random()) * 6 * power;
+      const s = (0.6 + Math.random()) * 8 * power;
       vel.push(new THREE.Vector3(
         s * Math.sin(ph) * Math.cos(th), s * Math.cos(ph), s * Math.sin(ph) * Math.sin(th),
       ));
@@ -542,12 +699,12 @@ export class ColonyScene {
     const g = new THREE.BufferGeometry();
     g.setAttribute("position", new THREE.BufferAttribute(pos, 3));
     const m = new THREE.PointsMaterial({
-      color: colorHex, size: 1.6 * power, transparent: true, opacity: 1,
+      color: colorHex, size: 1.8 * power, transparent: true, opacity: 1,
       blending: THREE.AdditiveBlending, depthWrite: false,
     });
     const pts = new THREE.Points(g, m);
     this.scene.add(pts);
-    this.bursts.push({ pts, vel, life: 1.1, age: 0 });
+    this.bursts.push({ pts, vel, life: 1.2, age: 0 });
   }
 
   #stepBursts(dt) {
@@ -580,7 +737,7 @@ export class ColonyScene {
         v.group.scale.multiplyScalar(1 - dt * 0.35);
         if (v.fade <= 0) {
           this.scene.remove(v.group);
-          v.core.material.dispose(); v.nucleus.material.dispose(); v.halo.material.dispose();
+          v.core.material.dispose(); v.skinMat.dispose(); v.orgMat.dispose(); v.halo.material.dispose();
           this.visuals.delete(id);
           this.posMap.delete(id);
         }
@@ -588,17 +745,16 @@ export class ColonyScene {
     }
   }
 
-  /** Selected reticle + nutrient pulse traveling down the ancestry chain. */
   #stepSelection(dt) {
     const sel = this.selected != null ? this.visuals.get(this.selected) : null;
     if (sel && !sel.dying) {
       this.reticle.visible = true;
       this.reticle.position.copy(sel.group.position);
       this.reticle.quaternion.copy(this.camera.quaternion);
+      this.reticle.scale.setScalar((sel.base || 2) * 1.35);
       const t = this.time;
       this.reticle.children[0].scale.setScalar(1 + 0.06 * Math.sin(t * 3.2));
       this.reticle.children[1].rotation.z = t * 0.9;
-      this.reticle.children[1].scale.setScalar(1 + 0.05 * Math.sin(t * 2.1 + 1));
     } else {
       this.reticle.visible = false;
     }
@@ -651,17 +807,19 @@ export class ColonyScene {
       requestAnimationFrame(loop);
       const dt = Math.min(0.05, clock.getDelta());
       this.time += dt;
-      // Push global time into every cell shader.
       for (const v of this.visuals.values()) {
         v.core.material.uniforms.uTime.value = this.time;
       }
+      this.#stepCells(dt);
       this.#driftSpores(this.spores, this.time);
       this.#driftSpores(this.motes, this.time * 0.6);
-      this.rim.material.opacity = 0.12 + 0.05 * Math.sin(this.time * 0.7);
+      this.rim.material.opacity = 0.1 + 0.05 * Math.sin(this.time * 0.7);
       this.#stepBursts(dt);
       this.#stepFades(dt);
       this.#stepSelection(dt);
       this.#tween(dt);
+      this.#measureSpread();
+      this.#autoFit(dt);
       this.#pick();
       this.controls.update();
       this.composer.render();

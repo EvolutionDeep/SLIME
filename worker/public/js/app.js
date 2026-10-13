@@ -111,7 +111,7 @@ function pushFeed(events) {
     const kind = FEED_KIND[ev.type] ? ev.type : "tick";
     const a = ev.agent != null ? colony.agents.get(ev.agent) : null;
     let text = ev.type;
-    if (ev.type === "birth") text = `agent #${ev.agent} budded from #${ev.from} → gen ${ev.gen}`;
+    if (ev.type === "birth") text = `agent #${ev.agent} budded from ${ev.from == null ? "genesis" : "#" + ev.from} → gen ${ev.gen}`;
     else if (ev.type === "hatch") text = `agent #${ev.agent} emerged from egg`;
     else if (ev.type === "death") text = `agent #${ev.agent} energy exhausted`;
     else if (ev.type === "quarantine") text = `agent #${ev.agent} swept by blue team`;
