@@ -9,6 +9,7 @@
 import { ColonyScene } from "./scene.js";
 import { setupKeeper } from "./keeper.js";
 import { setupClaim } from "./claim.js";
+import { createTour } from "./tour.js";
 
 const $ = (id) => document.getElementById(id);
 
@@ -95,6 +96,13 @@ addEventListener("keydown", (e) => { if (e.key === "Escape") drawer.close(); });
 
 const claim = setupClaim({ scene, getWorld: () => world, refresh: () => poll(), openDrawer: (k) => drawer.show(k) });
 
+// First-run coach-mark tour: auto-plays once the world is on screen, and the
+// rail "?" replays it on demand. tourChecked keeps the 4s poll from restarting
+// it every cycle before the visitor has dismissed it.
+const tour = createTour();
+$("btn-tour").addEventListener("click", () => tour.start());
+let tourChecked = false;
+
 // ---------------------------------------------------------------------------
 // Shared-world polling
 // ---------------------------------------------------------------------------
@@ -150,6 +158,7 @@ async function poll() {
   ui.mode.textContent = `SHARED WORLD · ${w.stats.pop} souls · epoch ${w.epoch}`;
   ui.mode.classList.add("live");
   if (ui.loading && !ui.loading.removed) ui.loading.remove();
+  if (!tourChecked) { tourChecked = true; tour.maybeAutoStart(); }
 }
 
 // ---------------------------------------------------------------------------

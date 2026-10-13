@@ -777,6 +777,57 @@ body {
 #toast.show { opacity: 1; transform: translate(-50%, 0); }
 #toast.bad { color: var(--red); border-color: rgba(232, 97, 122, 0.5); }
 
+/* --------------------------------------------------------------------------
+   Guided tour: a coach-mark walkthrough. One spotlighted region + one placard
+   per step; the living colony keeps drifting behind a calm dim. Solid ink, one
+   hairline, brass only on the primary action — no glass, no glow, no theatrics.
+   -------------------------------------------------------------------------- */
+.tour { position: fixed; inset: 0; z-index: 80; display: none; }
+.tour.on { display: block; }
+
+/* The spotlight is a transparent box whose enormous spread shadow dims all the
+   surrounding frame; it glides between targets. */
+.tour-spot {
+  position: absolute; border-radius: var(--radius);
+  border: 1px solid var(--gold-hot);
+  box-shadow: 0 0 0 9999px rgba(4, 8, 20, 0.74);
+  pointer-events: none;
+  transition: left 0.3s ease, top 0.3s ease, width 0.3s ease, height 0.3s ease;
+}
+.tour.centered .tour-spot { border-color: transparent; }
+
+.tour-card {
+  position: absolute; width: min(360px, calc(100vw - 32px));
+  background: var(--panel);
+  border: 1px solid var(--line-hot);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow);
+  padding: 18px 20px 16px;
+}
+.tour-title {
+  font-family: var(--display); font-weight: 600; font-size: 15px;
+  letter-spacing: 0.3px; color: var(--ink); margin-bottom: 9px;
+}
+.tour-body { font-size: 12.5px; line-height: 1.72; color: var(--dim); }
+.tour-foot {
+  display: flex; justify-content: space-between; align-items: center;
+  gap: 12px; margin-top: 16px;
+}
+.tour-count { font-size: 10px; letter-spacing: 1.6px; color: var(--faint); font-variant-numeric: tabular-nums; }
+.tour-nav { display: flex; gap: 8px; }
+.tour button {
+  font-family: var(--mono); font-size: 10px; font-weight: 600;
+  letter-spacing: 1.4px; text-transform: uppercase; cursor: pointer;
+  border-radius: var(--radius); padding: 7px 12px 6px;
+  background: none; border: 1px solid var(--line); color: var(--dim);
+  transition: color 0.15s, border-color 0.15s, background 0.15s;
+}
+.tour button:hover { color: var(--ink); border-color: var(--line-hot); }
+.tour .tour-skip { border-color: transparent; color: var(--faint); padding-left: 4px; padding-right: 4px; }
+.tour .tour-skip:hover { color: var(--dim); border-color: transparent; }
+.tour .primary { background: var(--gold); color: #1a1408; border-color: var(--gold); }
+.tour .primary:hover { color: #1a1408; border-color: var(--gold); filter: brightness(1.08); }
+
 /* Report card: ownership line + claim CTA. */
 .rp-owner {
   margin: 10px 14px 0; font-size: 9px; letter-spacing: 1.4px; text-transform: uppercase;
