@@ -9,6 +9,8 @@
 //   POST /api/feed              {address, agentId} — guardian feeds its slime
 //   POST /api/trial             {address, agentId, tier} — the pit: run a
 //                               hardware challenge for cap, glory or a burst
+//   POST /api/contribute        {challenge, nonce, sessionId} — lend your CPU
+//                               to the shared research meter (proof-verified)
 //   GET /api/config             protocol Config account
 //   GET /api/agents?limit=      fleet listing
 //   GET /api/agent/:id          one agent
@@ -25,7 +27,7 @@
 import { SlimeChain } from "./rpc";
 import { bs58Encode } from "./decode";
 import { runCron } from "./cron";
-import { worldView, getClaims, claimAgent, feedAgent, trialAgent } from "./world";
+import { worldView, getClaims, claimAgent, feedAgent, trialAgent, contribute } from "./world";
 
 export interface Env {
   RPC_URL: string;
@@ -97,6 +99,16 @@ export default {
 
       if (path === "/api/claims") {
         return json(await getClaims(env));
+      }
+
+      if (request.method === "POST" && path === "/api/contribute") {
+        // Volunteer compute: no wallet needed — every visitor can lend CPU.
+        const body = (await request.json().catch(() => null)) as
+          | { challenge?: number; nonce?: number; sessionId?: string } | null;
+        const r = await contribute(env, {
+          challenge: body?.challenge, nonce: body?.nonce, sessionId: body?.sessionId,
+        });
+        return json(r, r.ok ? 200 : 400);
       }
 
       if (request.method === "POST" && (path === "/api/claim" || path === "/api/feed" || path === "/api/trial")) {

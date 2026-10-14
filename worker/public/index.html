@@ -44,6 +44,7 @@
       <i>⚔</i><span>guardian</span><em id="guard-count" class="rail-badge hidden">0</em>
     </button>
     <button class="rail-btn" data-drawer="chain"><i>◈</i><span>chain</span></button>
+    <button id="btn-compute" class="rail-btn" data-drawer="compute" title="lend your CPU to the shared research"><i>⌬</i><span>compute</span><em id="compute-badge" class="rail-meter hidden">0%</em></button>
     <button class="rail-btn" data-drawer="paper"><i>§</i><span>paper</span></button>
     <span class="rail-sep"></span>
     <button id="btn-tour" class="rail-btn" title="replay the guided tour"><i>?</i><span>tour</span></button>
@@ -107,6 +108,25 @@
             interventions, R₀ betting and the holders' chamber all land here once
             the program and the community token are live.</p>
         </div>
+      </section>
+
+      <section data-p="compute" class="dp hidden">
+        <div class="panel-head"><span>volunteer compute</span><span class="plate-dim">your device · shared research</span></div>
+        <p class="dp-note">every visitor can lend a slice of their CPU. your browser
+          grinds a proof the world verifies instantly; together the solutions fill
+          one shared research meter, and a full meter feeds the whole colony.</p>
+        <button id="compute-toggle" class="compute-toggle"><i class="ct-dot"></i><span>lend compute</span></button>
+        <div class="compute-meter">
+          <div class="cm-top"><span>shared research</span><b id="compute-num">0 / 24</b></div>
+          <div class="cm-bar"><i id="compute-fill"></i></div>
+        </div>
+        <div class="compute-grid">
+          <div class="cg-cell"><label>your solutions</label><value id="compute-you">0</value></div>
+          <div class="cg-cell"><label>hash rate</label><value id="compute-rate">—</value></div>
+          <div class="cg-cell"><label>devices helping</label><value id="compute-contrib">0</value></div>
+          <div class="cg-cell"><label>breakthroughs</label><value id="compute-breakthroughs">0</value></div>
+        </div>
+        <p id="compute-note" class="compute-note">off — your device is idle</p>
       </section>
 
       <section data-p="paper" class="dp hidden">

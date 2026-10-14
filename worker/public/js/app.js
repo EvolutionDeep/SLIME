@@ -10,6 +10,7 @@ import { ColonyScene } from "./scene.js";
 import { setupKeeper } from "./keeper.js";
 import { setupClaim } from "./claim.js";
 import { createTour } from "./tour.js";
+import { setupCompute } from "./compute.js";
 
 const $ = (id) => document.getElementById(id);
 
@@ -68,7 +69,7 @@ scene.onSelect((id) => {
 // a <section data-p="..."> in index.html, nothing else.
 // ---------------------------------------------------------------------------
 
-const DRAWER_LABELS = { world: "WORLD", curve: "LEARNING CURVE", guardian: "GUARDIAN", chain: "KEEPER LEDGER", paper: "THE PAPER" };
+const DRAWER_LABELS = { world: "WORLD", curve: "LEARNING CURVE", guardian: "GUARDIAN", chain: "KEEPER LEDGER", compute: "VOLUNTEER COMPUTE", paper: "THE PAPER" };
 const drawer = {
   el: $("drawer"), title: $("drawer-title"),
   buttons: [...document.querySelectorAll(".rail-btn[data-drawer]")],
@@ -102,6 +103,9 @@ const claim = setupClaim({ scene, getWorld: () => world, refresh: () => poll(), 
 const tour = createTour();
 $("btn-tour").addEventListener("click", () => tour.start());
 let tourChecked = false;
+
+// Volunteer compute: the shared research meter your own browser can feed.
+const compute = setupCompute();
 
 // ---------------------------------------------------------------------------
 // Shared-world polling
@@ -154,6 +158,7 @@ async function poll() {
   renderStats(w);
   renderCurve(w);
   claim.refresh(w, fresh);
+  compute.update(w);
 
   ui.mode.textContent = `SHARED WORLD · ${w.stats.pop} souls · epoch ${w.epoch}`;
   ui.mode.classList.add("live");
@@ -201,6 +206,7 @@ function pushChronicle(events) {
     else if (ev.type === "cap-blocked") text = `${ev.n ?? 1} spawn attempts refused by credit caps`;
     else if (ev.type === "trial") text = `agent #${ev.agent} ${ev.ok ? "cleared" : "failed"} a pit trial at difficulty ${ev.diff}`;
     else if (ev.type === "burst") text = `agent #${ev.agent} burst its host in the pit — fossilized`;
+    else if (ev.type === "breakthrough") text = `distributed breakthrough — the crowd's compute fed the whole colony`;
     const kind = ev.type === "cap-blocked" ? "cap" : ev.type;
     ui.feed.prepend(feedRow(kind, `e${ev.epoch}`, text,
       a ? `#${a.gen}g ${a.genome.capability}cap` : ""));

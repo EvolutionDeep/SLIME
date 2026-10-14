@@ -23,6 +23,7 @@ const CLAIMS_KEY = "claims";
 const FEEDS_KEY = "feeds";
 const PIT_KEY = "pit";
 const FOSSILS_KEY = "fossils";
+const RESEARCH_KEY = "research";
 const CHRONICLE_KEEP = 80;
 const FEEDS_KEEP = 2000;
 const FOSSILS_KEEP = 24;
@@ -45,6 +46,31 @@ const HOST_CAP_KB = 4096;   // cfg.host.max_size_kb: the genome's coffin size
 const LOGISTIC_TEMP = 150;  // same solver temperature as the wild engine
 const FAMILIARITY_PER_WIN = 40;
 const FAMILIARITY_MAX = 300;
+
+// ---------------------------------------------------------------------------
+// Volunteer compute: every visitor can lend their device's CPU to a shared
+// research effort. Each epoch the world poses a deterministic proof-of-work
+// challenge derived from (seed, epoch); browsers grind a nonce in a Web Worker
+// and submit it. The Worker verifies in O(1) (recompute the same hash), dedupes
+// nonces and caps credit per device so no single machine can solo the bar. When
+// the shared meter fills, the whole colony gets a breakthrough energy glow —
+// a view-time overlay, exactly like feeds, so it never forks the sim.
+// ---------------------------------------------------------------------------
+
+const RESEARCH_GOAL = 24;          // valid solutions to trigger a breakthrough
+const POW_DIFFICULTY = 21;         // leading-zero bits the browser must grind
+const BOON_ENERGY = 15;            // energy granted to every alive slime
+const BOON_WINDOW = 1;             // epochs the breakthrough glow persists
+const MAX_CREDIT_PER_SESSION = 6;  // one device can't carry the whole colony
+
+interface Research {
+  epoch: number;
+  progress: number;
+  breakthroughs: number;   // cumulative, survives epoch rollover
+  lastBoonEpoch: number;   // -1 until the first breakthrough
+  usedNonces: number[];    // dedupe within the epoch (bounded by goal)
+  credited: Record<string, number>; // sessionId -> solutions this epoch
+}
 
 interface PitStats {
   cap: number;        // taming capability bonus (permanent)
@@ -339,6 +365,100 @@ export async function trialAgent(
 }
 
 // ---------------------------------------------------------------------------
+// Volunteer compute: proof-of-work verification + the shared research meter.
+// powHash is mirrored verbatim in public/js/pow-worker.js — the browser grinds
+// against the SAME function the Worker checks, so a solution is real work that
+// costs nothing to verify.
+// ---------------------------------------------------------------------------
+
+export function powHash(a: number, b: number): number {
+  let h = Math.imul(a >>> 0, 2654435761) ^ Math.imul(b >>> 0, 40503);
+  h ^= h >>> 15; h = Math.imul(h, 2246822519); h ^= h >>> 13;
+  return h >>> 0;
+}
+
+/** True when h has at least d leading zero bits. */
+const powOk = (h: number, d: number): boolean => (h >>> (32 - d)) === 0;
+
+/** The whole world shares one challenge per epoch: f(seed, epoch). */
+const epochChallenge = (seed: number, epoch: number): number => powHash(seed, epoch + 1);
+
+const emptyResearch = (epoch: number): Research => ({
+  epoch, progress: 0, breakthroughs: 0, lastBoonEpoch: -1, usedNonces: [], credited: {},
+});
+
+/** Load the epoch's research state, rolling counters forward on a new epoch. */
+async function loadResearch(env: WorldEnv, epoch: number): Promise<{ r: Research; fresh: boolean }> {
+  const stored = await readJson<Research | null>(env, RESEARCH_KEY, null);
+  if (!stored || stored.epoch !== epoch) {
+    const r = emptyResearch(epoch);
+    if (stored) { r.breakthroughs = stored.breakthroughs ?? 0; r.lastBoonEpoch = stored.lastBoonEpoch ?? -1; }
+    return { r, fresh: true };
+  }
+  return { r: stored, fresh: false };
+}
+
+/** Read-only research view for the dashboard (persists only the rollover). */
+async function researchView(env: WorldEnv, seed: number, epoch: number) {
+  const { r, fresh } = await loadResearch(env, epoch);
+  if (fresh && env.WORLD) await env.WORLD.put(RESEARCH_KEY, JSON.stringify(r));
+  const boonActive = r.lastBoonEpoch >= 0 && epoch - r.lastBoonEpoch <= BOON_WINDOW;
+  return {
+    boonActive,
+    block: {
+      epoch, progress: r.progress, goal: RESEARCH_GOAL,
+      breakthroughs: r.breakthroughs, contributors: Object.keys(r.credited).length,
+      difficulty: POW_DIFFICULTY, challenge: epochChallenge(seed, epoch),
+      perDeviceCap: MAX_CREDIT_PER_SESSION, boonActive, boonEnergy: BOON_ENERGY,
+    },
+  };
+}
+
+export async function contribute(
+  env: WorldEnv, proof: { challenge?: number; nonce?: number; sessionId?: string },
+): Promise<{
+  ok: boolean; error?: string; progress?: number; goal?: number;
+  boon?: boolean; credited?: number;
+}> {
+  const { colony, snap, meta } = await getWorld(env);
+  const epoch = colony.epoch;
+  const sid = String(proof.sessionId ?? "").trim().slice(0, 64);
+  if (!sid) return { ok: false, error: "sessionId required" };
+  const ch = Number(proof.challenge) >>> 0;
+  const nonce = Number(proof.nonce) >>> 0;
+  if (ch !== epochChallenge(meta.seed, epoch)) {
+    return { ok: false, error: "stale challenge — the epoch rolled, grab a new one" };
+  }
+  if (!powOk(powHash(ch, nonce), POW_DIFFICULTY)) {
+    return { ok: false, error: "invalid proof of work" };
+  }
+  const { r } = await loadResearch(env, epoch);
+  if (r.usedNonces.includes(nonce)) {
+    return { ok: false, error: "nonce already counted", progress: r.progress, goal: RESEARCH_GOAL };
+  }
+  if ((r.credited[sid] ?? 0) >= MAX_CREDIT_PER_SESSION) {
+    return { ok: false, error: "device limit reached this epoch — let others help", progress: r.progress, goal: RESEARCH_GOAL };
+  }
+  r.usedNonces.push(nonce);
+  r.credited[sid] = (r.credited[sid] ?? 0) + 1;
+  if (r.progress < RESEARCH_GOAL) r.progress++;
+
+  let boon = false;
+  if (r.progress >= RESEARCH_GOAL && r.lastBoonEpoch !== epoch) {
+    boon = true;
+    r.breakthroughs++;
+    r.lastBoonEpoch = epoch;
+    // A chronicle-worthy moment: the crowd's compute fed the whole colony.
+    snap.log.push({ i: snap.logSeq++, epoch, type: "breakthrough", n: r.progress });
+    if (snap.log.length > CHRONICLE_KEEP) snap.log.splice(0, snap.log.length - CHRONICLE_KEEP);
+    snap.colony = colony.snapshot();
+    if (env.WORLD) await env.WORLD.put(SNAP_KEY, JSON.stringify(snap));
+  }
+  if (env.WORLD) await env.WORLD.put(RESEARCH_KEY, JSON.stringify(r));
+  return { ok: true, progress: r.progress, goal: RESEARCH_GOAL, boon, credited: r.credited[sid] };
+}
+
+// ---------------------------------------------------------------------------
 // View: the JSON the whole world renders from.
 // ---------------------------------------------------------------------------
 
@@ -349,6 +469,7 @@ export async function worldView(env: WorldEnv, since = -1) {
   const feeds = await readJson<Feed[]>(env, FEEDS_KEY, []);
   const pits = await readJson<Record<string, PitStats>>(env, PIT_KEY, {});
   let fossils = await readJson<Fossil[]>(env, FOSSILS_KEY, []);
+  const { boonActive, block: research } = await researchView(env, meta.seed, colony.epoch);
 
   // Feed boosts: 1 epoch of energy per recent feed, capped like on-chain.
   const feedCount: Record<number, number> = {};
@@ -393,10 +514,13 @@ export async function worldView(env: WorldEnv, since = -1) {
     const g = claims[String(a.id)];
     if (g) claimed++;
     const pit = pits[String(a.id)];
+    // Breakthrough glow: a crowd-funded research win lifts every living slime.
+    const boon = boonActive && a.status === STATUS.Alive ? BOON_ENERGY : 0;
     agents.push({
       id: a.id, gen: a.gen, parent: a.parent, status: a.status,
       energy: Math.min(200, a.energy + Math.min(50, (feedCount[a.id] ?? 0) * 10)
-        + (pit?.energy ?? 0)),
+        + (pit?.energy ?? 0) + boon),
+      boon: boon || undefined,
       genome: a.genome, notesDepth: a.notesDepth,
       wins: a.wins, losses: a.losses, birthEpoch: a.birthEpoch,
       guardian: g ? g.a : null,
@@ -430,6 +554,7 @@ export async function worldView(env: WorldEnv, since = -1) {
     maxGen: colony.maxGen,
     totalEver: colony.totalEver,
     stats: { alive, eggs, quarantined, pop, claimed, fossils: fossils.length },
+    research,
     tiers: TIERS,
     hostCapKb: HOST_CAP_KB,
     fossils: fossils.slice(-12).reverse(),

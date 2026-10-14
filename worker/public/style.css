@@ -247,6 +247,19 @@ body {
   color: #1a1408; background: var(--gold);
 }
 .rail-badge.hidden { display: none; }
+/* Compute rail pill: a live percentage of the shared research meter. Cyan, not
+   brass — gold is reserved for guardianship, so the eye never confuses the two. */
+.rail-meter {
+  position: absolute; top: 4px; right: 4px;
+  min-width: 15px; height: 15px; padding: 0 3px; border-radius: 8px;
+  display: grid; place-items: center;
+  font-family: var(--mono); font-size: 8px; font-weight: 600;
+  color: var(--cyan); background: rgba(102, 184, 224, 0.14);
+  border: 1px solid rgba(102, 184, 224, 0.32);
+}
+.rail-meter.hidden { display: none; }
+.rail-btn.pulse { animation: railPulse 1.2s ease-in-out 0s 3; }
+@keyframes railPulse { 0%, 100% { color: var(--dim); } 50% { color: var(--cyan); } }
 .rail-sep { height: 1px; margin: 4px 6px; background: var(--line); }
 
 /* --------------------------------------------------------------------------
@@ -828,6 +841,39 @@ body {
 .tour .primary { background: var(--gold); color: #1a1408; border-color: var(--gold); }
 .tour .primary:hover { color: #1a1408; border-color: var(--gold); filter: brightness(1.08); }
 
+/* --------------------------------------------------------------------------
+   Volunteer compute panel: an opt-in toggle, the shared research meter, and a
+   few live readouts for the device doing the work. Cyan accent, hairline grid —
+   an instrument, not a banner.
+   -------------------------------------------------------------------------- */
+.compute-toggle {
+  display: inline-flex; align-items: center; gap: 9px; margin: 4px 0 16px;
+  font-family: var(--mono); font-size: 11px; font-weight: 600;
+  letter-spacing: 1.2px; text-transform: uppercase; cursor: pointer;
+  color: var(--dim); background: var(--panel-2);
+  border: 1px solid var(--line-hot); border-radius: var(--radius);
+  padding: 10px 16px; transition: color 0.15s, border-color 0.15s;
+}
+.compute-toggle:hover { color: var(--ink); border-color: var(--cyan); }
+.compute-toggle .ct-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--faint); }
+.compute-toggle.on { color: var(--cyan); border-color: rgba(102, 184, 224, 0.5); }
+.compute-toggle.on .ct-dot { background: var(--cyan); animation: ctPulse 1.6s ease-in-out infinite; }
+@keyframes ctPulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.35; } }
+
+.compute-meter { margin-bottom: 16px; }
+.cm-top { display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 7px; }
+.cm-top span { font-size: 9px; letter-spacing: 1.6px; text-transform: uppercase; color: var(--dim); }
+.cm-top b { font-family: var(--mono); font-size: 12px; color: var(--ink); font-variant-numeric: tabular-nums; }
+.cm-bar { height: 6px; background: rgba(120, 150, 200, 0.12); border-radius: 3px; overflow: hidden; }
+.cm-bar i { display: block; height: 100%; width: 0%; background: linear-gradient(90deg, var(--cyan), var(--neon)); transition: width 0.6s cubic-bezier(0.22, 1, 0.36, 1); }
+
+.compute-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 1px; background: var(--line); border: 1px solid var(--line); border-radius: var(--radius); overflow: hidden; }
+.cg-cell { background: var(--panel); padding: 10px 12px; display: flex; flex-direction: column; gap: 4px; }
+.cg-cell label { font-size: 9px; letter-spacing: 1.2px; text-transform: uppercase; color: var(--faint); }
+.cg-cell value { font-family: var(--mono); font-size: 15px; font-weight: 600; color: var(--ink); font-variant-numeric: tabular-nums; }
+
+.compute-note { margin-top: 12px; font-size: 10.5px; letter-spacing: 0.3px; color: var(--dim); }
+
 /* Report card: ownership line + claim CTA. */
 .rp-owner {
   margin: 10px 14px 0; font-size: 9px; letter-spacing: 1.4px; text-transform: uppercase;
@@ -912,3 +958,5 @@ body {
 .ev-trial .tag { color: var(--gold); border-color: var(--gold-hot); }
 .ev-burst .dot { background: var(--alarm); }
 .ev-burst .tag { color: var(--red); border-color: rgba(232, 97, 122, 0.4); }
+.ev-breakthrough .dot { background: var(--cyan); }
+.ev-breakthrough .tag { color: var(--cyan); }

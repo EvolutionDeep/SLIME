@@ -23,7 +23,7 @@ const STEPS = [
   { sel: null, title: "The dish",
     body: "Every glowing cell is one agent: colour marks its family, brightness its capability. They bud children, burn energy, and die — and every visitor is watching the exact same colony at the same epoch. Hover a cell to read its vitals, click to pin its card, drag to orbit, scroll to zoom." },
   { sel: ".rail", title: "Instruments",
-    body: "The rail opens one panel at a time: world telemetry, the learning curve from the paper, your guardianship, the on-chain ledger, and the source note. Press ESC to give the screen back." },
+    body: "The rail opens one panel at a time: world telemetry, the learning curve from the paper, your guardianship, the on-chain ledger, volunteer compute (lend your CPU to the shared research), and the source note. Press ESC to give the screen back." },
   { sel: "#chronicle", title: "The chronicle",
     body: "The world's live log — every birth, death and blue-team quarantine, stamped with its epoch. It is the record of this run, not a feed of noise." },
   { sel: "#hero", fallback: '.rail-btn[data-drawer="guardian"]', title: "Become a guardian",
